@@ -141,16 +141,17 @@ test('Pages artifact keeps verified firmware files while excluding updater code 
   assert.deepEqual(files.filter(path=>path.endsWith('.bin')).map(path=>path.replaceAll('\\','/')).sort(),ids.map(id=>'firmware/'+id+'.bin').sort());
   assert.deepEqual(readdirSync(new URL('firmware/',root)).sort(),ids.map(id=>id+'.bin').sort());
   const perButtonHashes={
-    ABLODLOCKDB:'145537286c3442127ff1b64c173a097db39af9f06ab0aaa01e07d21f6e527ecc',
-    ABLODDB:'00853ca0baf0b0ee6e57ce966cd59110e6d328dd49655905d1b33a0d55bb7db9',
-    ABLODSTATSDB:'b5a0b245d330f1658196f94b3e986f573b7ee5a647500cfb543b987d883423ed'
+    ABLODLOCKDB:'83cd489501adb8b87cf1ea2892c1c64eefe09a2a603dcee7e6bea7991b8d1547',
+    ABLODDB:'a5d5a5cd6285ff2feb8fa107ea068641db0a717f7c1badda22b2c3731c6a8d12',
+    ABLODSTATSDB:'43dd5ffa72c552eb1d421cb5002cac1d840744548825f46848ae27f2f31a2402'
   };
   for(const [id,sha] of Object.entries(perButtonHashes)){
     const image=catalogue.images.find(image=>image.id===id);
     assert.equal(image.name,id);assert.equal(image.file,id+'.bin');assert.equal(image.sha256,sha);
-    assert.equal(image.debounce_schema,1);assert.equal(image.button_count,6);assert.equal(image.features.per_button_debounce,true);
+    assert.equal(image.debounce_schema,1);assert.equal(image.button_count,6);assert.equal(image.features.per_button_debounce,true);assert.equal(image.config_storage_version,3);
   }
   for(const image of catalogue.images){
+    if(image.id!=='stock'){assert.equal(image.implementation_revision,2);assert.equal(image.hardware_tested,false);}
     const bytes=readFileSync(new URL('firmware/'+image.file,dist));
     assert.equal(bytes.length,99008);assert.equal(createHash('sha256').update(bytes).digest('hex'),image.sha256);
     assert.deepEqual(bytes,readFileSync(new URL('firmware/'+image.file,root)));

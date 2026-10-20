@@ -93,7 +93,7 @@ test('native editor independently switches five keys and saves only changed timi
   assert.equal(packets.filter(p=>p[5]===126&&p[9]===2).length,1);
   for(const language of ['EN','JPN'])for(const row of rows)assert.ok(!/[\u4e00-\u9fff]/u.test(language==='EN'?translate(row.name,language):''));
   const html=readFileSync(new URL('../native/research.html',import.meta.url),'utf8');
-  assert.equal((html.match(/v-model="draft.debounce"/g)||[]).length,0);
+  assert.equal((html.match(/v-model="draft.debounce"/g)||[]).length,1);
   assert.equal((html.match(/v-model="debounceDraft.enabled"/g)||[]).length,1);
   assert.ok(html.includes('v-model="debounceDraft[field.key]"'));
   assert.ok(!html.includes('v-model="draft[field.key]"'));

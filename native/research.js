@@ -6,8 +6,8 @@ import {FIRMWARE_NOTICE, isLuna33, requireLuna33} from '../device-access.js';
 import {lodLabel, lodHeightOptions} from '../advanced/lod.js';
 import {translate, savedLanguage, normalizeLanguage, applyDocumentLanguage} from '../i18n.js';
 const stockFeatures = {name:'官方固件',fps:'none',phase:'none',debounce:'none',stats:false};
-const patchNames = {fps:'FPS 预设',lock:'相位调节',lead:'相位提前量',debounce:'自定义消抖',pre:'按下前滤波',post:'按下后滤波',plock:'按下锁定',relock:'松开锁定'};
-const blank = () => ({fps:null,lock:false,lead:undefined,debounce:false,pre:undefined,post:undefined,plock:undefined,relock:undefined});
+const patchNames = {fps:'FPS 预设',lock:'相位调节',lead:'相位提前量',debounce:'自定义消抖',landingProtection:'落地保护',pre:'按下前滤波',post:'按下后滤波',plock:'按下锁定',relock:'松开锁定'};
+const blank = () => ({fps:null,lock:false,lead:undefined,debounce:false,landingProtection:true,pre:undefined,post:undefined,plock:undefined,relock:undefined});
 function fpsLabel(preset) {
   if (!preset) return '';
   const [name,unit,longest,shortest] = preset;
@@ -36,7 +36,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
   return {
     data() { return {definitions,language:savedLanguage(),headerUpdater:new window.XviUpdater(),themeMode:'1',tab:'settings',connected:false,demo:false,busy:false,deviceName:'',currentFirmware:'',transportTarget:2,slot:1,
       riskVisible:true,riskAcknowledged:false,firmwareNotice:FIRMWARE_NOTICE,deviceVerified:false,
-      base:{raw:[],legacy:{},active:1,slot:1},draft:blank(),legacy:{},message:'',hasError:false,telemetry:false,activity:[],counterRows:[],features:FULL_FEATURES,buttons:BUTTONS,selectedButton:0,
+      base:{raw:[],legacy:{},active:1,slot:1},draft:blank(),legacy:{},message:'',hasError:false,telemetry:false,activity:[],counterRows:[],features:FULL_FEATURES,buttons:BUTTONS,selectedButton:0,runtime:null,
       registerRows:WATCH.map(([page,reg,label])=>({key:registerAddress(page,reg),page,reg,label,value:null,baseline:null,input:'',undo:null})),pageHex:'18',addressHex:'7A',
       rates:[[8,125],[4,250],[2,500],[1,1000],[16,1000],[32,2000],[64,4000],[128,8000]].map(([value,label])=>({value,label:`${label} Hz`})),
       debounceFields:[{key:'pre',label:'按下前滤波'},{key:'post',label:'按下后滤波'},{key:'plock',label:'按下锁定'},{key:'relock',label:'松开锁定'}],
@@ -47,6 +47,15 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       fpsOptions(){return this.features.fps==='presets'?definitions.fps_presets.map((p,i)=>({value:i+1,label:fpsLabel(p)})):[{value:1,label:fpsLabel(definitions.fps_presets[0])}];},
       lodOptions(){return lodHeightOptions(this.base.legacy.lod);},
       debounceDraft(){return this.draft.buttons?.[this.selectedButton]||{};},
+      phaseLead(){return Number(this.draft.lead)||((RATES[this.legacy.polling]===8000)?40:80);},
+      phaseState(){
+        if(!this.draft.lock)return '关闭';
+        if(this.slot!==this.base.active)return '未启用的配置';
+        if(this.transportTarget!==2||![2000,4000,8000].includes(RATES[this.legacy.polling]))return '等待无线高回报率';
+        if(this.phaseLead<4||this.phaseLead>=Math.floor(500000/RATES[this.legacy.polling]))return '提前量超出范围';
+        if(this.draft.lock!==decodeProfile(this.base.raw).lock||Number(this.draft.lead)!==decodeProfile(this.base.raw).lead||this.legacy.polling!==this.base.legacy.polling)return '待应用';
+        return ['等待回报','已调节','已跳过','捕获失败'][this.runtime?.phase??0];
+      },
       dirty() { if (!this.connected) return false; try { return this.changeRows(this.collectDraft()).length > 0; } catch { return true; } },
     },
     async mounted() {
@@ -86,11 +95,11 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         const raw=encodeProfile(this.base.raw,patch,definitions.fps_presets.length,this.features),legacy={...this.legacy};
         validateLegacy(legacy,this.transportTarget);validateFeatures(patch,this.features);return{raw,legacy,patch};
       },
-      patchText(key,value){ if(key==='fps')return value?fpsLabel(definitions.fps_presets[value-1])||String(value):'原厂脚本';if(key==='lock'||key==='debounce')return value?'开启':'关闭';return `${value}${key==='lead'?' µs':' ms'}`; },
+      patchText(key,value){ if(key==='fps')return value?fpsLabel(definitions.fps_presets[value-1])||String(value):'原厂脚本';if(['lock','debounce','landingProtection'].includes(key))return value?'开启':'关闭';return `${value}${key==='lead'?' µs':' ms'}`; },
       legacyText(key,value){ if(key==='lod')return lodLabel(value);if(key==='polling'||key==='scan_rate')return this.rate(value);if(key==='scan_sequence')return ['关闭','左键优先','右键优先'][value];return value?'开启':'关闭'; },
       changeRows(draft){
         const out=[],old=decodeProfile(this.base.raw);
-        for(const key of Object.keys(patchNames))if(!(this.features.perButtonDebounce&&TIMING_KEYS.includes(key))&&!(this.features.independentDebounce&&key==='debounce')&&old[key]!==draft.patch[key])out.push({name:patchNames[key],before:this.patchText(key,old[key]),after:this.patchText(key,draft.patch[key])});
+        for(const key of Object.keys(patchNames))if(!(key==='landingProtection'&&!this.features.landingPolicy)&&!(this.features.perButtonDebounce&&TIMING_KEYS.includes(key))&&!(this.features.independentDebounce&&key==='debounce')&&old[key]!==draft.patch[key])out.push({name:patchNames[key],before:this.patchText(key,old[key]),after:this.patchText(key,draft.patch[key])});
         if(this.features.independentDebounce)for(const button of BUTTONS){const before=this.base.buttons[button.id].enabled,after=draft.patch.buttons[button.id].enabled;if(before!==after)out.push({name:`${button.label}：自定义消抖`,before:this.patchText('debounce',before),after:this.patchText('debounce',after)});}
         if(this.features.perButtonDebounce)for(const button of BUTTONS)for(const key of TIMING_KEYS){const before=this.base.buttons[button.id][key],after=draft.patch.buttons[button.id][key];if(before!==after)out.push({name:`${button.label}：${patchNames[key]}`,before:this.patchText(key,before),after:this.patchText(key,after)});}
         for(const[key,spec]of Object.entries(LEGACY))if(this.base.legacy[key]!==draft.legacy[key])out.push({name:spec.label,before:this.legacyText(key,this.base.legacy[key]),after:this.legacyText(key,draft.legacy[key])});return out;
@@ -109,7 +118,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         this.currentFirmware=await client.version();const slot=await client.activeProfile();
         let info;
         try{info=await client.info();}catch(error){if(error.status!==0xa3)throw error;}
-        if(info){this.features=info.features;this.setBase(await client.read(slot));this.telemetry=await client.telemetry();this.connected=true;}
+        if(info){this.features=info.features;this.setBase(await client.read(slot));this.telemetry=await client.telemetry();this.runtime=await client.runtimeStatus();this.connected=true;}
         else{this.features=stockFeatures;}
         this.transportTarget=transport.target;this.deviceName='LUNAFURY LUNA33';admittedDevice=device;this.deviceVerified=true;
         this.registerRows.forEach(r=>{r.value=r.baseline=r.undo=null;r.input='';});this.counterRows=[];
@@ -129,17 +138,19 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         },true);
       },
       async disconnect(){
-        const closing=transport;transport=null;client=null;admittedDevice=null;this.deviceVerified=false;this.connected=false;this.demo=false;this.currentFirmware='';this.features=FULL_FEATURES;this.draft=blank();this.legacy={};this.base={raw:[],legacy:{},active:1,slot:1};this.reviewVisible=false;pending=null;
+        const closing=transport;transport=null;client=null;admittedDevice=null;this.deviceVerified=false;this.connected=false;this.demo=false;this.currentFirmware='';this.features=FULL_FEATURES;this.draft=blank();this.legacy={};this.runtime=null;this.base={raw:[],legacy:{},active:1,slot:1};this.reviewVisible=false;pending=null;
         if(closing)await closing.close();release?.();release=null;this.notify('设备已断开。');
       },
       async deviceRemoved(event){if(transport?.device===event.device){await this.disconnect();this.fail(Error('设备已拔出，请重新连接'));}},
-      async readConfig(){await this.guard(async()=>{this.setBase(await client.read(this.slot));this.notify(`已重新读取配置 ${this.slot}。`);});},
+      async readConfig(){await this.guard(async()=>{this.setBase(await client.read(this.slot));this.runtime=await client.runtimeStatus();if(this.runtime?.save===3&&this.runtime.attempts>=3)throw Error('保存失败，当前参数尚未写入存储；请重试保存');this.notify(`已重新读取配置 ${this.slot}。`);});},
+      async retrySave(){await this.guard(async()=>{this.notify('正在保存到鼠标存储…');await client.retrySave({onStatus:status=>{this.runtime=status;}});this.setBase(await client.read(this.slot));this.notify('设置已保存，回读核对通过。');});},
       async changeSlot(slot){if(this.dirty){this.slot=this.base.slot;this.$message.warning(this.t('请先应用更改，或重新读取以放弃草稿'));return;}await this.guard(async()=>{try{this.setBase(await client.read(slot));}catch(e){this.slot=this.base.slot;throw e;}});},
       loadPreset(){
         if(!this.connected||this.busy)return;
         if(this.transportTarget===0){this.fail(Error('4k 预设需要通过无线接收器连接'));return;}
-        const features=this.features,draft={fps:features.fps==='presets'?7:features.fps==='hyperfps'?1:0,lock:features.phase!=='none',lead:features.phase==='none'?0:80,debounce:features.debounce!=='none',pre:0,post:features.debounce==='fine'?1.5:features.debounce==='ms'?2:0,plock:0,relock:features.debounce==='none'?0:10};
+        const features=this.features,draft={fps:features.fps==='presets'?7:features.fps==='hyperfps'?1:0,lock:features.phase!=='none',lead:0,landingProtection:true,debounce:features.debounce!=='none',pre:0,post:features.debounce==='fine'?1.5:features.debounce==='ms'?2:0,plock:0,relock:features.debounce==='none'?0:10};
         if(features.perButtonDebounce)draft.buttons=Array.from({length:features.buttonCount},()=>({...Object.fromEntries(TIMING_KEYS.map(key=>[key,draft[key]])),...(features.independentDebounce?{enabled:true}:{})}));
+        if(features.buttonCount===6)draft.buttons[5]={...this.base.buttons[5]};
         this.draft=draft;
         this.legacy={...this.legacy,polling:64,hyper:1,tracking:0,lod:138,motion_sync:0,angle_snap:0,ripple:0};this.notify('已载入预设，待应用');
       },
@@ -157,7 +168,8 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
           if(!equal(current,draft.raw))await client.putProfile(expected.slot,draft.raw);
           if(this.features.perButtonDebounce)for(let key=1;key<this.features.buttonCount;key++)if(TIMING_KEYS.some(name=>fresh.buttons[key][name]!==draft.patch.buttons[key][name]))await client.putButtonTimings(expected.slot,key,draft.patch.buttons[key]);
           const final=await client.read(expected.slot);if(!equal(final.raw,draft.raw)||Object.keys(LEGACY).some(key=>final.legacy[key]!==draft.legacy[key])||(this.features.perButtonDebounce&&!equalButtons(final.buttons,draft.patch.buttons)))throw Error('最终配置与请求值不同');
-          this.setBase(final);this.notify(this.demo?'演示参数已更新并回读。':'设置已保存，回读核对通过。');this.log('扩展配置保存与回读完成');
+          if(this.features.runtimeStatus){this.notify('正在保存到鼠标存储…');await client.waitForSave({onStatus:status=>{this.runtime=status;}});}
+          this.setBase(final);this.notify(this.demo?'演示参数已更新并回读。':this.features.runtimeStatus?'设置已保存，回读核对通过。':'设置已写入，回读核对通过。');this.log('扩展配置保存与回读完成');
         }catch(e){try{this.setBase(await client.read(expected.slot));}catch{}throw Error(`部分设置可能已生效：${e.message}，请以重新读取为准`);}
       },
       async readRegisters(){await this.guard(async()=>{for(const row of this.registerRows){row.value=await client.peek(row.page,row.reg);row.input=hex(row.value);if(row.baseline===null)row.baseline=row.value;}this.notify(`已读取 ${this.registerRows.length} 项寄存器`);this.log('传感器观察地址读取完成');});},
@@ -168,10 +180,10 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       snapshot(){return{format:'lunafury-lf33-snapshot-v1',demo:lastSource?.demo??false,device:lastSource,at:new Date().toISOString(),config:this.connected?this.base:null,registers:Object.fromEntries(this.registerRows.filter(r=>r.value!==null).map(r=>[r.key,r.value]))};},
       exportSnapshot(){download(`Luna33-${this.demo?'DEMO-':''}snapshot-${Date.now()}.json`,this.snapshot());},
       async importSnapshot(event){try{const file=event.target.files[0];if(!file)return;if(file.size>262144)throw Error('快照需小于 256 KiB');const data=JSON.parse(await file.text());if(data.format!=='lunafury-lf33-snapshot-v1'||data.demo!==this.demo||!this.connected)throw Error('请连接同一模式的设备，再导入对应快照');const entries=Object.entries(data.registers||{});if(entries.length>256)throw Error('快照地址过多');const valid=entries.map(([key,value])=>{if(!/^[\da-f]{2}:[\da-f]{2}$/i.test(key)||!Number.isInteger(value)||value<0||value>255)throw Error('无效的快照数据');const[page,reg]=key.split(':').map(v=>parseInt(v,16));return{key:registerAddress(page,reg),page,reg,value};});for(const item of valid){let row=this.registerRows.find(r=>r.key===item.key);if(!row){row={key:item.key,page:item.page,reg:item.reg,label:'导入地址',value:null,baseline:null,input:'',undo:null};this.registerRows.push(row);}row.baseline=item.value;}this.notify('已导入对比基线');}catch(e){this.fail(e);}finally{event.target.value='';}},
-      async readStatistics(){await this.guard(async()=>{this.telemetry=await client.telemetry();const values=await client.statistics();this.counterRows=Object.entries(values).map(([name,value])=>({name,value:value.toLocaleString()}));this.notify('已读取计数器');});},
+      async readStatistics(){await this.guard(async()=>{this.telemetry=await client.telemetry();const values=await client.statistics();this.runtime=await client.runtimeStatus();if(this.runtime)Object.assign(values,{clock_pause_seen:Number(this.runtime.clockPaused),invalid_age_snapshots:this.runtime.invalidAges});this.counterRows=Object.entries(values).map(([name,value])=>({name,value:value.toLocaleString()}));this.notify('已读取计数器');});},
       async toggleTelemetry(){await this.guard(async()=>{this.telemetry=await client.telemetry();this.telemetry=await client.telemetry(Number(!this.telemetry));this.notify(`遥测已${this.telemetry?'开启':'关闭'}`);});},
       resetStatistics(){this.review('清零计数器','清零全部计数器',[{name:'累计计数',before:'当前值',after:'0'}],async()=>{await client.extension(4,0);this.counterRows=[];this.notify('计数器已清零。');});},
-      exportLog(){download(`Luna33-${lastSource?.demo?'DEMO-':''}log-${Date.now()}.json`,{...this.snapshot(),transactions:records,activity:this.activity,counters:this.counterRows});}
+      exportLog(){download(`Luna33-${lastSource?.demo?'DEMO-':''}log-${Date.now()}.json`,{...this.snapshot(),transactions:records,activity:this.activity,counters:this.counterRows,runtime:this.runtime});}
     }
   };
 }

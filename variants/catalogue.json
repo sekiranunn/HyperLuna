@@ -2,12 +2,23 @@
   "application": "Luna33",
   "base": "0x6000",
   "bytes": 99008,
+  "source_sha256": {
+    "lunafury-driver/variants/build_variants.py": "f720019e6ec5f811c68d1229fc7724524fc49372087d05c1b48b498e65a7148b",
+    "lunafury-driver/variants/build_release.py": "309c8ac97d072605b6ff15ec89b3dd8e2644c058f90a1abc51198a406571ac03",
+    "publishing/HyperLuna/variants/targets.json": "c8400130a87efb76f8323143595953bd34d65b8517922eb320bdd2f90e6ebc95",
+    "lunafury-analysis/port/full_patch.py": "1d0fbceb5fbd6bc9284ca9d65ae582e8747b4727c51bb0f809095eab162494a9",
+    "lunafury-analysis/port/button_patch.py": "24130959b3836b8e6287826d65638f5619d122c3db81d0b8fc28acbb0e80c74a",
+    "lunafury-analysis/port/switch_patch.py": "bcc4a8a852b4dcc3f4dc423cecd123cacf97c2e0a51510683fac0f227e8bcac4",
+    "lunafury-analysis/port/compact_scripts.py": "4185682c7f96f26ef3f626b7b6342e38e95249fedb979b1ebc42a7dc9088a4ab",
+    "lunafury-analysis/port/fw.py": "26940754a4f8e67af3b02c36d9e80432187394dc6807a656961a49d1f65ad875",
+    "lunafury-analysis/port/asm.py": "73e6177155802a99cf3046de4712be7ec0e1baffe3bbe9115b0391d3c28bcc66"
+  },
   "images": [
     {
       "id": "ABLODLOCKDB",
       "name": "ABLODLOCKDB",
       "file": "ABLODLOCKDB.bin",
-      "sha256": "145537286c3442127ff1b64c173a097db39af9f06ab0aaa01e07d21f6e527ecc",
+      "sha256": "83cd489501adb8b87cf1ea2892c1c64eefe09a2a603dcee7e6bea7991b8d1547",
       "bytes": 99008,
       "recommended": true,
       "features": {
@@ -20,6 +31,8 @@
       "variant_id": 1,
       "capabilities": 43,
       "hardware_tested": false,
+      "implementation_revision": 2,
+      "config_storage_version": 3,
       "debounce_schema": 1,
       "button_count": 6
     },
@@ -27,7 +40,7 @@
       "id": "ABLODDB",
       "name": "ABLODDB",
       "file": "ABLODDB.bin",
-      "sha256": "00853ca0baf0b0ee6e57ce966cd59110e6d328dd49655905d1b33a0d55bb7db9",
+      "sha256": "a5d5a5cd6285ff2feb8fa107ea068641db0a717f7c1badda22b2c3731c6a8d12",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -40,6 +53,8 @@
       "variant_id": 2,
       "capabilities": 41,
       "hardware_tested": false,
+      "implementation_revision": 2,
+      "config_storage_version": 3,
       "debounce_schema": 1,
       "button_count": 6
     },
@@ -47,7 +62,7 @@
       "id": "ABLODSTATSDB",
       "name": "ABLODSTATSDB",
       "file": "ABLODSTATSDB.bin",
-      "sha256": "b5a0b245d330f1658196f94b3e986f573b7ee5a647500cfb543b987d883423ed",
+      "sha256": "43dd5ffa72c552eb1d421cb5002cac1d840744548825f46848ae27f2f31a2402",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -60,6 +75,8 @@
       "variant_id": 3,
       "capabilities": 213,
       "hardware_tested": false,
+      "implementation_revision": 2,
+      "config_storage_version": 3,
       "debounce_schema": 1,
       "button_count": 6
     },
@@ -67,7 +84,7 @@
       "id": "ABLODSTATS",
       "name": "ABLODSTATS",
       "file": "ABLODSTATS.bin",
-      "sha256": "dca7f0d3e3b572abf4308e0bd47b5aa58b18b471c618a2ee6d66f68a4c697ad5",
+      "sha256": "0535bae0d7659bd84133461d858a896d773eab324ec334dc222e82c38e65137d",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -78,13 +95,15 @@
       },
       "variant_id": 4,
       "capabilities": 133,
-      "hardware_tested": false
+      "hardware_tested": false,
+      "implementation_revision": 2,
+      "config_storage_version": 1
     },
     {
       "id": "ABLODLOCK",
       "name": "ABLODLOCK",
       "file": "ABLODLOCK.bin",
-      "sha256": "d7d16b01b3362ca6b8e86fc77afe6769eb0a4db47950d6b1bcd8e6b5db1290a4",
+      "sha256": "a5b9f9cd1966dc8455e5be39ee0c07ee902b509370d8e4ac2e110d8d2a53fb88",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -95,13 +114,15 @@
       },
       "variant_id": 5,
       "capabilities": 5,
-      "hardware_tested": false
+      "hardware_tested": false,
+      "implementation_revision": 2,
+      "config_storage_version": 1
     },
     {
       "id": "ABLOD",
       "name": "ABLOD",
       "file": "ABLOD.bin",
-      "sha256": "db7c3606029a21cb8196e9d2f1b4b4e13ac9dc37930c7ea167adf8d7d7e75a6e",
+      "sha256": "195c426db4594d0b189be1e08d06213ae45c4967bec35278a7891ce1a5410a55",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -112,7 +133,9 @@
       },
       "variant_id": 6,
       "capabilities": 1,
-      "hardware_tested": false
+      "hardware_tested": false,
+      "implementation_revision": 2,
+      "config_storage_version": 1
     }
   ]
 }

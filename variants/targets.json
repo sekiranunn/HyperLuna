@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "targets": [
+    {"id":"ABLODLOCKDB","builder":"per_button","recommended":true,"features":{"phase":"saved","debounce":"fine","fps":"presets","stats":false}},
+    {"id":"ABLODDB","builder":"per_button","features":{"phase":"none","debounce":"fine","fps":"presets","stats":false}},
+    {"id":"ABLODSTATSDB","builder":"per_button","features":{"phase":"live","debounce":"ms","fps":"hyperfps","stats":true}},
+    {"id":"ABLODSTATS","builder":"core","features":{"phase":"live","debounce":"none","fps":"none","stats":true}},
+    {"id":"ABLODLOCK","builder":"core","features":{"phase":"live","debounce":"none","fps":"none","stats":false}},
+    {"id":"ABLOD","builder":"core","features":{"phase":"none","debounce":"none","fps":"none","stats":false}}
+  ]
+}

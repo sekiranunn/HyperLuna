@@ -53,7 +53,7 @@ test('preset and save/readback preserve reactive per-button flags and timing fie
   const {vm,device}=await editor();
   try{
     vm.loadPreset();
-    await toggleEveryButton(vm);
+    assert.equal(vm.draft.lead,0,'the preset uses rate-aware automatic phase lead');
     const baseline=vm.collectDraft();await vm.applySettings(baseline,structuredClone(vm.base));
     await toggleEveryButton(vm);
     vm.selectedButton=1;await Vue.nextTick();

@@ -20,7 +20,7 @@ export function normalize(raw) {
   return bytes.slice(0, 6 + bytes[3]);
 }
 const echoLength = {1: 1, 2: 17, 3: 1, 4: 1, 6: 3, 7: 2, 8: 2, 9: 10};
-const replyMinimum = {0: 17, 1: 27, 2: 27, 3: 27, 4: 11, 5: 11, 6: 13, 7: 13, 8: 20, 9: 20};
+const replyMinimum = {0: 17, 1: 27, 2: 27, 3: 27, 4: 11, 5: 11, 6: 13, 7: 13, 8: 20, 9: 20, 10:18, 11:18};
 export function matches(reply, command, payload, group = 1) {
   if (reply.length < 6 || reply[4] !== group || reply[5] !== command || ![0xa1, 0xa2, 0xa3].includes(reply[0])) return false;
   if (command !== 0x7e) {
@@ -42,7 +42,7 @@ export class RequestTimeout extends Error {
   constructor() { super('设备响应超时。请保持鼠标唤醒，并关闭其他驱动页面后重新读取。'); this.name = 'RequestTimeout'; }
 }
 function readonly(command, data, group) {
-  if (group === 1 && command === 0x7e) return [0, 1, 3, 7, 8].includes(data[3]) || (data[3] === 5 && data[4] === 2);
+  if (group === 1 && command === 0x7e) return [0, 1, 3, 7, 8, 10].includes(data[3]) || (data[3] === 5 && data[4] === 2);
   return LEGACY_READS.has(`${group}:${command}`) || (group === 0 && [0x81, 0x85].includes(command));
 }
 const LEGACY_READS = new Set(['1:128', '1:129', '1:139', '1:147', '1:136', '1:137', '1:132', '1:138', '0:152', '0:159']);
@@ -135,7 +135,8 @@ export function decodeProfile(raw) {
   const view = new DataView(Uint8Array.from(raw).buffer);
   return {fps: raw[0], lock: raw[1] !== 0, lead: view.getUint16(2, true), debounce: raw[4] !== 0,
     pre: view.getUint16(6, true) / 10, post: view.getUint16(8, true) / 10,
-    plock: view.getUint16(10, true) / 10, relock: view.getUint16(12, true) / 10};
+    plock: view.getUint16(10, true) / 10, relock: view.getUint16(12, true) / 10,
+    landingProtection:!(raw[14]&1)};
 }
 export function encodeProfile(original, value, fpsCount = 34, features) {
   if (original.length !== 16) throw Error('请先读取鼠标配置');
@@ -147,6 +148,10 @@ export function encodeProfile(original, value, fpsCount = 34, features) {
     if(!Array.isArray(value.buttons)||value.buttons.length!==5||value.buttons.some(button=>typeof button.enabled!=='boolean'))throw Error('无效的按键开关');
     const mask=value.buttons.reduce((bits,button,key)=>bits|(Number(button.enabled)<<key),0);
     raw[4]=Number(mask!==0);raw[5]=128|mask;
+  }
+  if(features?.landingPolicy){
+    if(typeof value.landingProtection!=='boolean')throw Error('无效的落地保护设置');
+    raw[14]=Number(!value.landingProtection);raw[15]=0;
   }
   ['pre', 'post', 'plock', 'relock'].forEach((key, i) => {
     const n = value[key];
@@ -188,6 +193,35 @@ export class LunaClient {
     if (String.fromCharCode(...r.slice(10, 14)) !== 'LF33' || r[14] !== 1 || r[15] !== this.definitions.fps_presets.length || r[16] !== this.definitions.counters.length) throw Error('未识别到兼容的 LF33 v1 固件');
     this.features = decodeFeatures(r);
     return {magic: 'LF33', protocol: r[14], fpsCount: r[15], counterCount: r[16], features:this.features};
+  }
+  decodeStatus(r) {
+    const view=new DataView(r.buffer,r.byteOffset,r.byteLength);
+    const result={save:r[10]&15,attempts:r[10]>>>4,phase:r[11],clockPaused:Boolean(r[12]),saveError:r[13],invalidAges:view.getUint32(14,true)};
+    if(result.save>3||result.attempts>3||result.phase>3||r[12]>1)throw Error('无效的固件状态响应');
+    return result;
+  }
+  async runtimeStatus() {
+    if(!this.features?.runtimeStatus)return null;
+    return this.decodeStatus(await this.extension(10,0));
+  }
+  async waitForSave({timeout=10000,interval=100,onStatus=()=>{}}={}) {
+    if(!this.features?.runtimeStatus)return null;
+    const deadline=Date.now()+timeout;
+    do{
+      const status=await this.runtimeStatus();onStatus(status);
+      if(status.save===0||status.save===2)return status;
+      if(status.save===3&&status.attempts>=3)throw Error('保存失败，当前参数尚未写入存储；请重试保存');
+      if(Date.now()>=deadline)break;
+      await sleep(interval);
+    }while(true);
+    throw Error('保存尚未确认，请重新读取状态');
+  }
+  async retrySave(options) {
+    if(!this.features?.runtimeStatus)throw Error('当前固件不支持保存状态');
+    // Mutations are sent once. If the reply is lost, inspect state instead of
+    // replaying a flash request whose outcome is unknown.
+    try{await this.extension(11,0);}catch(error){if(!(error instanceof RequestTimeout))throw error;}
+    return this.waitForSave(options);
   }
   slot(slot) { if (!Number.isInteger(slot) || slot < 1 || slot > 4) throw Error('配置槽必须为 1–4'); }
   async activeProfile() {
