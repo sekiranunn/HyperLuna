@@ -1,0 +1,3 @@
+* text=auto eol=lf
+official/** -text
+firmware/*.bin -text

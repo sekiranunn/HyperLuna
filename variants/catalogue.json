@@ -1,0 +1,118 @@
+{
+  "application": "Luna33",
+  "base": "0x6000",
+  "bytes": 99008,
+  "images": [
+    {
+      "id": "ABLODLOCKDB",
+      "name": "ABLODLOCKDB",
+      "file": "ABLODLOCKDB.bin",
+      "sha256": "145537286c3442127ff1b64c173a097db39af9f06ab0aaa01e07d21f6e527ecc",
+      "bytes": 99008,
+      "recommended": true,
+      "features": {
+        "phase": "saved",
+        "debounce": "fine",
+        "fps": "presets",
+        "stats": false,
+        "per_button_debounce": true
+      },
+      "variant_id": 1,
+      "capabilities": 43,
+      "hardware_tested": false,
+      "debounce_schema": 1,
+      "button_count": 6
+    },
+    {
+      "id": "ABLODDB",
+      "name": "ABLODDB",
+      "file": "ABLODDB.bin",
+      "sha256": "00853ca0baf0b0ee6e57ce966cd59110e6d328dd49655905d1b33a0d55bb7db9",
+      "bytes": 99008,
+      "recommended": false,
+      "features": {
+        "phase": "none",
+        "debounce": "fine",
+        "fps": "presets",
+        "stats": false,
+        "per_button_debounce": true
+      },
+      "variant_id": 2,
+      "capabilities": 41,
+      "hardware_tested": false,
+      "debounce_schema": 1,
+      "button_count": 6
+    },
+    {
+      "id": "ABLODSTATSDB",
+      "name": "ABLODSTATSDB",
+      "file": "ABLODSTATSDB.bin",
+      "sha256": "b5a0b245d330f1658196f94b3e986f573b7ee5a647500cfb543b987d883423ed",
+      "bytes": 99008,
+      "recommended": false,
+      "features": {
+        "phase": "live",
+        "debounce": "ms",
+        "fps": "hyperfps",
+        "stats": true,
+        "per_button_debounce": true
+      },
+      "variant_id": 3,
+      "capabilities": 213,
+      "hardware_tested": false,
+      "debounce_schema": 1,
+      "button_count": 6
+    },
+    {
+      "id": "ABLODSTATS",
+      "name": "ABLODSTATS",
+      "file": "ABLODSTATS.bin",
+      "sha256": "dca7f0d3e3b572abf4308e0bd47b5aa58b18b471c618a2ee6d66f68a4c697ad5",
+      "bytes": 99008,
+      "recommended": false,
+      "features": {
+        "phase": "live",
+        "debounce": "none",
+        "fps": "none",
+        "stats": true
+      },
+      "variant_id": 4,
+      "capabilities": 133,
+      "hardware_tested": false
+    },
+    {
+      "id": "ABLODLOCK",
+      "name": "ABLODLOCK",
+      "file": "ABLODLOCK.bin",
+      "sha256": "d7d16b01b3362ca6b8e86fc77afe6769eb0a4db47950d6b1bcd8e6b5db1290a4",
+      "bytes": 99008,
+      "recommended": false,
+      "features": {
+        "phase": "live",
+        "debounce": "none",
+        "fps": "none",
+        "stats": false
+      },
+      "variant_id": 5,
+      "capabilities": 5,
+      "hardware_tested": false
+    },
+    {
+      "id": "ABLOD",
+      "name": "ABLOD",
+      "file": "ABLOD.bin",
+      "sha256": "db7c3606029a21cb8196e9d2f1b4b4e13ac9dc37930c7ea167adf8d7d7e75a6e",
+      "bytes": 99008,
+      "recommended": false,
+      "features": {
+        "phase": "none",
+        "debounce": "none",
+        "fps": "none",
+        "stats": false
+      },
+      "variant_id": 6,
+      "capabilities": 1,
+      "hardware_tested": false
+    }
+  ]
+}
