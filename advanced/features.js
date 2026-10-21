@@ -12,8 +12,8 @@ export function decodeFeatures(reply) {
   if(reply.length===17)return FULL_FEATURES;
   const feature=reply[17]===0?{...FULL_FEATURES,mask:171}:VARIANTS[reply[17]-1];
   if(![19,21,23].includes(reply.length)||!feature||reply[18]!==feature.mask||(reply.length===19&&reply[17]===0))throw Error('未识别的 LF33 固件功能版本');
-  if(reply.length===23&&(reply[21]!==2||reply[22]!==7))throw Error('未识别的 LF33 固件功能版本');
-  const revision=reply.length===23?{implementationRevision:2,runtimeStatus:true,landingPolicy:feature.debounce!=='none'}:{};
+  if(reply.length===23&&!((reply[21]===2&&reply[22]===7)||(reply[21]===3&&reply[22]===15&&feature.phase!=='none')))throw Error('未识别的 LF33 固件功能版本');
+  const revision=reply.length===23?{implementationRevision:reply[21],runtimeStatus:true,landingPolicy:feature.debounce!=='none',...(reply[21]===3?{phaseDiagnostics:true,phaseDiagnosticSchema:1}:{})}:{};
   if(reply.length===21||reply.length===23&&(reply[19]!==0||reply[20]!==0)){
     if(!((reply[19]===1&&reply[20]===6)||(reply[19]===2&&reply[20]===5))||feature.debounce==='none')throw Error('未识别的逐键消抖版本');
     return {...feature,...revision,perButtonDebounce:true,independentDebounce:reply[19]===2,buttonCount:reply[20]};

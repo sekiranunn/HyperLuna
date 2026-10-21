@@ -1,7 +1,7 @@
 export const frontendFiles = [
   'index.html', 'official-entry.js', 'device-lock.js', 'device-access.js',
   'runtime.js', 'i18n.js', 'advanced/index.html', 'advanced/protocol.js',
-  'advanced/protocol-definitions.json', 'advanced/features.js', 'advanced/demo.js', 'advanced/lod.js',
+  'advanced/protocol-definitions.json', 'advanced/features.js', 'advanced/demo.js', 'advanced/lod.js', 'advanced/phase-diagnostics.js',
   'native/entry.js', 'native/header-entry.js', 'native/header-entry.css',
   'native/research.js', 'native/research.html', 'native/style.css'
 ];
@@ -10,8 +10,8 @@ export const sourceFiles = [
   ...frontendFiles, 'deployment.json', 'build.mjs', 'build-pages.mjs', 'publication-manifest.mjs',
   'package.json', 'package-lock.json', 'official-manifest.json', 'variants/targets.json',
   'patches/official-scan-rate.mjs', 'patches/asset-paths.mjs', 'patches/remove-firmware.mjs',
-  'tests/protocol.test.js', 'tests/button-debounce.test.js', 'tests/runtime-status.test.js', 'tests/official-scan-rate.test.js', 'tests/access-pages.test.js', 'tests/lod.test.js', 'tests/i18n.test.js',
-  'tests/fixtures/lod-height.html', 'tests/fixtures/lod-height.js',
+  'tests/protocol.test.js', 'tests/button-debounce.test.js', 'tests/runtime-status.test.js', 'tests/phase-diagnostics.test.js', 'tests/official-scan-rate.test.js', 'tests/access-pages.test.js', 'tests/lod.test.js', 'tests/i18n.test.js',
+  'tests/fixtures/lod-height.html', 'tests/fixtures/lod-height.js', 'tests/helpers/bundled-vue.js',
   '.github/workflows/pages.yml', '.gitattributes'
 ];
 export const stockImage = {
@@ -19,7 +19,7 @@ export const stockImage = {
   sha256:'416f47366144d1773f37cc6b993f8f43332dba2746bc9cce13e732c038b93057'
 };
 export function publicCatalogue(catalogue) {
-  const keys = ['id','name','file','sha256','bytes','recommended','features','variant_id','capabilities','hardware_tested','debounce_schema','button_count','implementation_revision','config_storage_version','phase_basis','phase_rates_hz','phase_default_lead_us','ack_clock_recovery'];
+  const keys = ['id','name','file','sha256','bytes','recommended','features','variant_id','capabilities','hardware_tested','debounce_schema','button_count','implementation_revision','config_storage_version','phase_basis','phase_rates_hz','phase_default_lead_us','ack_clock_recovery','phase_diagnostics','phase_diagnostic_counters'];
   return {application:'Luna33', base:'0x6000', bytes:99008,
     images:catalogue.images.map(image => Object.fromEntries(keys.filter(key => key in image).map(key => [key,image[key]])))};
 }

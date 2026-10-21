@@ -1,5 +1,6 @@
 // LF33 v1. Packet layout matches lunafury-analysis/port/luna.py.
 import {decodeFeatures, validateFeatures} from './features.js';
+import {decodePhaseDiagnostics} from './phase-diagnostics.js';
 export const VID = 0x373e;
 export const PIDS = [0x0032, 0x0033];
 export const hex = n => Number(n).toString(16).padStart(2, '0').toUpperCase();
@@ -20,7 +21,7 @@ export function normalize(raw) {
   return bytes.slice(0, 6 + bytes[3]);
 }
 const echoLength = {1: 1, 2: 17, 3: 1, 4: 1, 6: 3, 7: 2, 8: 2, 9: 10};
-const replyMinimum = {0: 17, 1: 27, 2: 27, 3: 27, 4: 11, 5: 11, 6: 13, 7: 13, 8: 20, 9: 20, 10:18, 11:18};
+const replyMinimum = {0: 17, 1: 27, 2: 27, 3: 27, 4: 11, 5: 11, 6: 13, 7: 13, 8: 20, 9: 20, 10:18, 11:18, 12:60};
 export function matches(reply, command, payload, group = 1) {
   if (reply.length < 6 || reply[4] !== group || reply[5] !== command || ![0xa1, 0xa2, 0xa3].includes(reply[0])) return false;
   if (command !== 0x7e) {
@@ -42,7 +43,7 @@ export class RequestTimeout extends Error {
   constructor() { super('设备响应超时。请保持鼠标唤醒，并关闭其他驱动页面后重新读取。'); this.name = 'RequestTimeout'; }
 }
 function readonly(command, data, group) {
-  if (group === 1 && command === 0x7e) return [0, 1, 3, 7, 8, 10].includes(data[3]) || (data[3] === 5 && data[4] === 2);
+  if (group === 1 && command === 0x7e) return [0, 1, 3, 7, 8, 10, 12].includes(data[3]) || (data[3] === 5 && data[4] === 2);
   return LEGACY_READS.has(`${group}:${command}`) || (group === 0 && [0x81, 0x85].includes(command));
 }
 const LEGACY_READS = new Set(['1:128', '1:129', '1:139', '1:147', '1:136', '1:137', '1:132', '1:138', '0:152', '0:159']);
@@ -203,6 +204,10 @@ export class LunaClient {
   async runtimeStatus() {
     if(!this.features?.runtimeStatus)return null;
     return this.decodeStatus(await this.extension(10,0));
+  }
+  async phaseDiagnostics() {
+    if(!this.features?.phaseDiagnostics)return null;
+    return decodePhaseDiagnostics(await this.extension(12,0));
   }
   async waitForSave({timeout=10000,interval=100,onStatus=()=>{}}={}) {
     if(!this.features?.runtimeStatus)return null;

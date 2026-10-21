@@ -16,6 +16,7 @@ export class DemoDevice {
     this.slots = Array.from({length: 4}, (_, i) => Uint8Array.from(i ? new Array(16).fill(0) : [7, 1, 80, 0, 1, 0, 0, 0, 15, 0, 0, 0, 100, 0, 0, 0]));
     this.perButtonDebounce=perButtonDebounce||independentDebounce;this.independentDebounce=independentDebounce;
     this.implementationRevision=implementationRevision;this.saveState=2;this.saveError=0;this.phase=1;this.clockPaused=0;this.invalidAges=0;this.statusQueue=[];
+    this.phaseCounters=new Uint32Array(12);this.phaseCounters[0]=implementationRevision===3?1:0;this.phaseReason=0;this.phaseDiagnosticVersion=1;
     this.buttonCount=independentDebounce?5:6;
     this.buttons=this.slots.map(raw=>Array.from({length:this.buttonCount},()=>raw.slice(6,14)));
     this.legacy = Array.from({length: 4}, () => ({polling: 64, scan_rate: 64, hyper: 1, tracking: 0, lod: 138, motion_sync: 0, angle_snap: 0, ripple: 0, scan_sequence: 0}));
@@ -30,7 +31,7 @@ export class DemoDevice {
     if (command === 0x7e) {
       const op = data[3], args = data.slice(4), prefix = Array.from(data.slice(0, 4));
       switch (op) {
-        case 0: payload = [...prefix, 76, 70, 51, 51, 1, 34, 32,...(this.perButtonDebounce||this.implementationRevision?[0,171,this.perButtonDebounce?(this.independentDebounce?2:1):0,this.perButtonDebounce?this.buttonCount:0]:[]),...(this.implementationRevision?[this.implementationRevision,7]:[])]; break;
+        case 0: payload = [...prefix, 76, 70, 51, 51, 1, 34, 32,...(this.perButtonDebounce||this.implementationRevision?[0,171,this.perButtonDebounce?(this.independentDebounce?2:1):0,this.perButtonDebounce?this.buttonCount:0]:[]),...(this.implementationRevision?[this.implementationRevision,this.implementationRevision===3?15:7]:[])]; break;
         case 1: payload = [...prefix, args[0], ...this.slots[args[0] - 1]]; break;
         case 2: this.slots[args[0] - 1] = args.slice(1, 17);this.buttons[args[0]-1][0]=args.slice(7,15); payload = [...prefix, ...args]; break;
         case 3: {
@@ -55,11 +56,17 @@ export class DemoDevice {
         }
         case 10:
         case 11: {
-          if(this.implementationRevision!==2){status=0xa3;break;}
+          if(![2,3].includes(this.implementationRevision)){status=0xa3;break;}
           if(op===11)this.saveState=2;
           this.saveState=this.statusQueue.shift()??this.saveState;
           const age=new Uint8Array(4);new DataView(age.buffer).setUint32(0,this.invalidAges,true);
           payload=[...prefix,this.saveState,this.phase,this.clockPaused,this.saveError,...age];break;
+        }
+        case 12: {
+          if(this.implementationRevision!==3||args.length!==1){status=0xa3;break;}
+          const bytes=new Uint8Array(48),view=new DataView(bytes.buffer);
+          this.phaseCounters.forEach((value,index)=>view.setUint32(index*4,value,true));
+          payload=[...prefix,this.phaseDiagnosticVersion,this.phaseReason,...bytes];break;
         }
         default: status = 0xa3;
       }

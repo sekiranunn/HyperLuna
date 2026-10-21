@@ -35,3 +35,10 @@
 .lf-review-dialog .cell{word-break:normal;overflow-wrap:anywhere}
 
 .lf-phase-status{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:#86909c;line-height:1.6;margin-top:8px}
+.lf-phase-status .el-button,.lf-phase-toolbar .el-button{padding:0;line-height:1.6;margin:0}
+.lf-phase-diagnostics{border-top:1px solid #e5e6eb;margin-top:16px;padding-top:14px;font-size:12px}
+.lf-phase-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#86909c}
+.lf-phase-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0}
+.lf-phase-metrics>div{display:flex;flex-direction:column;gap:5px;min-width:0}.lf-phase-metrics span{color:#86909c;overflow-wrap:anywhere}.lf-phase-metrics strong{font-size:16px;font-weight:600;overflow-wrap:anywhere;color:inherit}
+.lf-phase-details{margin-top:12px;color:#86909c;line-height:1.8}.lf-phase-details summary{cursor:pointer;user-select:none}.lf-phase-details>div{display:flex;justify-content:space-between;gap:12px;margin-top:5px}.lf-phase-details>div>span:first-child{min-width:0;overflow-wrap:anywhere}
+.night-mode .lf-phase-diagnostics{border-color:#343a46}

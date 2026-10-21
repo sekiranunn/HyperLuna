@@ -5,6 +5,7 @@ import {assetUrl} from '../runtime.js';
 import {FIRMWARE_NOTICE, isLuna33, requireLuna33} from '../device-access.js';
 import {lodLabel, lodHeightOptions} from '../advanced/lod.js';
 import {translate, savedLanguage, normalizeLanguage, applyDocumentLanguage} from '../i18n.js';
+import {PHASE_COUNTERS, PHASE_REASONS, phaseCounterWindow} from '../advanced/phase-diagnostics.js';
 const stockFeatures = {name:'官方固件',fps:'none',phase:'none',debounce:'none',stats:false};
 const patchNames = {fps:'FPS 预设',lock:'相位调节',lead:'相位提前量',debounce:'自定义消抖',landingProtection:'抬鼠复位防误触',pre:'按下前滤波',post:'按下后滤波',plock:'按下锁定',relock:'松开锁定'};
 const blank = () => ({fps:null,lock:false,lead:undefined,debounce:false,landingProtection:true,pre:undefined,post:undefined,plock:undefined,relock:undefined});
@@ -25,7 +26,7 @@ function download(name, data) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
   const a = document.createElement('a'); a.href=url; a.download=name; document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
-export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) {
+export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry,phaseClock={now:()=>Date.now(),setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)}}) {
   let client=null, transport=null, release=null, pending=null, lastSource=null;
   let acknowledged=false, admittedDevice=null;
   const requireAccess = () => {
@@ -33,10 +34,12 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
     if (!(admittedDevice?.opened && isLuna33(admittedDevice))) throw Error('请先连接 LUNAFURY LUNA33');
   };
   const records=[];
+  let phaseTimer=null,phaseEpoch=0,phaseHistory=[];
   return {
     data() { return {definitions,language:savedLanguage(),headerUpdater:new window.XviUpdater(),themeMode:'1',tab:'settings',connected:false,demo:false,busy:false,deviceName:'',currentFirmware:'',transportTarget:2,slot:1,
       riskVisible:true,riskAcknowledged:false,firmwareNotice:FIRMWARE_NOTICE,deviceVerified:false,
       base:{raw:[],legacy:{},active:1,slot:1},draft:blank(),legacy:{},message:'',hasError:false,telemetry:false,activity:[],counterRows:[],features:FULL_FEATURES,buttons:BUTTONS,selectedButton:0,runtime:null,runtimeReadAt:0,
+      phaseDiagnostics:null,phaseDiagnosticReadAt:0,phaseObserving:false,phaseReading:false,phaseWindow:null,phaseDiagnosticError:'',phaseDiagnosticBusy:false,phasePageHidden:false,
       registerRows:WATCH.map(([page,reg,label])=>({key:registerAddress(page,reg),page,reg,label,value:null,baseline:null,input:'',undo:null})),pageHex:'18',addressHex:'7A',
       rates:[[8,125],[4,250],[2,500],[1,1000],[16,1000],[32,2000],[64,4000],[128,8000]].map(([value,label])=>({value,label:`${label} Hz`})),
       debounceFields:[{key:'pre',label:'按下前滤波'},{key:'post',label:'按下后滤波'},{key:'plock',label:'按下锁定'},{key:'relock',label:'松开锁定'}],
@@ -48,14 +51,36 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       lodOptions(){return lodHeightOptions(this.base.legacy.lod);},
       debounceDraft(){return this.draft.buttons?.[this.selectedButton]||{};},
       phaseLead(){return Number(this.draft.lead)||80;},
-      phaseReadTime(){return this.runtimeReadAt?new Date(this.runtimeReadAt).toLocaleTimeString({ZH:'zh-CN',EN:'en-GB',JPN:'ja-JP'}[this.language],{hour12:false}):'';},
-      phaseState(){
+      phaseSnapshotReadAt(){return this.features.phaseDiagnostics&&this.phaseDiagnosticReadAt?this.phaseDiagnosticReadAt:this.runtimeReadAt;},
+      phaseReadTime(){return this.phaseSnapshotReadAt?new Date(this.phaseSnapshotReadAt).toLocaleTimeString({ZH:'zh-CN',EN:'en-GB',JPN:'ja-JP'}[this.language],{hour12:false}):'';},
+      phaseConstraint(){
         if(!this.draft.lock)return '关闭';
         if(this.slot!==this.base.active)return '未启用的配置';
         if(this.transportTarget!==2||![1000,2000,4000].includes(RATES[this.legacy.polling]))return '仅支持无线 1 / 2 / 4 kHz';
         if(this.phaseLead<4||this.phaseLead>=Math.floor(500000/RATES[this.legacy.polling]))return '提前量超出范围';
         if(this.draft.lock!==decodeProfile(this.base.raw).lock||Number(this.draft.lead)!==decodeProfile(this.base.raw).lead||this.legacy.polling!==this.base.legacy.polling)return '待应用';
+        return '';
+      },
+      phaseState(){
+        if(this.phaseConstraint)return this.phaseConstraint;
+        if(this.features.phaseDiagnostics&&this.phaseDiagnostics){
+          const reason=this.phaseDiagnostics.lastReason;
+          return reason===null?'尚无调节结果':reason===0?'上次调节成功':reason===9?'上次捕获失败':'上次调节跳过';
+        }
         return ['尚无调节结果','上次调节成功','上次调节跳过','上次捕获失败'][this.runtime?.phase??0];
+      },
+      phaseTotals(){return this.phaseWindow||(this.phaseObserving?null:this.phaseDiagnostics);},
+      phaseCountRows(){return PHASE_COUNTERS.map((key,index)=>({key,label:PHASE_REASONS[index],value:this.phaseTotals?.counters[key]||0})).filter(row=>row.value>0);},
+      phaseLastReason(){return this.phaseDiagnostics?.lastReason===null||!this.phaseDiagnostics?'尚无调节结果':PHASE_REASONS[this.phaseDiagnostics.lastReason];},
+      phaseWindowLabel(){return this.phaseWindow?this.t('观察窗口 {seconds} s',{seconds:this.phaseWindow.seconds.toFixed(1)}):this.t(this.phaseObserving?'采集中':'累计（本次开机）');},
+      phaseObservationState(){
+        if(this.phaseDiagnosticError)return '诊断读取失败';
+        if(!this.phaseObserving)return '观察已停止';
+        if(this.phasePageHidden||this.tab!=='settings'||this.busy||this.dirty)return '观察已暂停';
+        if(this.phaseDiagnosticBusy)return '诊断更新中';
+        if(!this.phaseWindow)return '采集中';
+        if(!this.phaseWindow.frames)return this.phaseConstraint||'等待新运动帧';
+        return this.phaseWindow.adjusted?'观察中':'本窗口未成功调节';
       },
       dirty() { if (!this.connected) return false; try { return this.changeRows(this.collectDraft()).length > 0; } catch { return true; } },
     },
@@ -63,8 +88,9 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       this.languageChanged(this.language);
       window.addEventListener('beforeunload',this.beforeUnload);
       if (navigator.hid) navigator.hid.addEventListener('disconnect',this.deviceRemoved);
+      if(typeof document!=='undefined')document.addEventListener('visibilitychange',this.phaseVisibilityChanged);
     },
-    beforeDestroy() { window.removeEventListener('beforeunload',this.beforeUnload); if(navigator.hid)navigator.hid.removeEventListener('disconnect',this.deviceRemoved); transport?.close(); release?.(); },
+    beforeDestroy() { this.stopPhaseObservation();window.removeEventListener('beforeunload',this.beforeUnload);if(typeof document!=='undefined')document.removeEventListener('visibilitychange',this.phaseVisibilityChanged); if(navigator.hid)navigator.hid.removeEventListener('disconnect',this.deviceRemoved); transport?.close(); release?.(); },
     methods: {
       t(text,values){return translate(text,this.language,values);},
       activityText(entry){const split=entry.indexOf('  ');return split<0?this.t(entry):entry.slice(0,split+2)+this.t(entry.slice(split+2));},
@@ -75,7 +101,52 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       fail(error){ this.message=error.message||String(error); this.hasError=true; this.$message.error(this.t(this.message)); this.log(this.message); },
       notify(text){ this.message=text; this.hasError=false; },
       setRuntime(status){this.runtime=status;this.runtimeReadAt=status?Date.now():0;},
-      async refreshPhaseStatus(){await this.guard(async()=>{this.setRuntime(await client.runtimeStatus());});},
+      async refreshPhaseStatus(){await this.guard(async()=>{this.setRuntime(await client.runtimeStatus());await this.readPhaseSnapshot();});},
+      phasePageVisible(){return typeof document==='undefined'||document.visibilityState!=='hidden';},
+      phaseNumber(value){return value===undefined?'—':value.toLocaleString();},
+      setPhaseSnapshot(snapshot,at=phaseClock.now()){
+        if(!snapshot||snapshot.busy){this.phaseDiagnosticBusy=Boolean(snapshot?.busy);return;}
+        this.phaseDiagnostics=snapshot;this.phaseDiagnosticReadAt=at;this.phaseDiagnosticBusy=false;this.phaseDiagnosticError='';
+        if(!this.phaseObserving){this.phaseWindow=null;return;}
+        if(phaseHistory.length){
+          const previous=phaseHistory[phaseHistory.length-1];
+          if(!phaseCounterWindow(previous.snapshot,snapshot,at-previous.at)){phaseHistory=[];this.phaseWindow=null;}
+        }
+        phaseHistory.push({snapshot,at});
+        while(phaseHistory.length>2&&phaseHistory[1].at<=at-5000)phaseHistory.shift();
+        if(phaseHistory.length>1)this.phaseWindow=phaseCounterWindow(phaseHistory[0].snapshot,snapshot,at-phaseHistory[0].at);
+      },
+      async readPhaseSnapshot(epoch=phaseEpoch){
+        if(!client||!this.features.phaseDiagnostics)return;
+        const reader=client,snapshot=await reader.phaseDiagnostics();
+        if(reader===client&&epoch===phaseEpoch)this.setPhaseSnapshot(snapshot);
+      },
+      schedulePhasePoll(delay=1000){
+        if(phaseTimer!==null)phaseClock.clearTimeout(phaseTimer);phaseTimer=null;
+        if(this.phaseObserving&&this.phasePageVisible()){
+          const epoch=phaseEpoch;phaseTimer=phaseClock.setTimeout(()=>{phaseTimer=null;return this.pollPhaseDiagnostics(epoch);},delay);
+        }
+      },
+      async pollPhaseDiagnostics(epoch=phaseEpoch){
+        if(epoch!==phaseEpoch||!this.phaseObserving||!this.connected)return;
+        try{
+          if(!this.phasePageVisible()||this.tab!=='settings'||this.busy||this.dirty){phaseHistory=[];this.phaseWindow=null;return;}
+          if(this.phaseReading)return;
+          this.phaseReading=true;
+          await this.readPhaseSnapshot(epoch);
+        }catch(error){
+          if(epoch===phaseEpoch){this.phaseDiagnosticError=error.message||String(error);this.stopPhaseObservation();}
+        }finally{
+          if(epoch===phaseEpoch){this.phaseReading=false;this.schedulePhasePoll();}
+        }
+      },
+      startPhaseObservation(){
+        if(!this.connected||!this.features.phaseDiagnostics||this.busy||this.dirty)return;
+        this.stopPhaseObservation();phaseHistory=[];this.phaseWindow=null;this.phaseDiagnosticError='';this.phaseObserving=true;this.schedulePhasePoll(0);
+      },
+      stopPhaseObservation(){phaseEpoch++;if(phaseTimer!==null)phaseClock.clearTimeout(phaseTimer);phaseTimer=null;phaseHistory=[];this.phaseObserving=false;this.phaseReading=false;},
+      resetPhaseWindow(){phaseEpoch++;phaseHistory=[];this.phaseWindow=null;this.phaseReading=false;this.schedulePhasePoll();},
+      phaseVisibilityChanged(){this.phasePageHidden=!this.phasePageVisible();if(this.phaseObserving)this.resetPhaseWindow();},
       async guard(work,connecting=false) { if(this.busy)return; this.busy=true; try { if(!connecting)requireAccess();await work(); } catch(e){this.fail(e);} finally{this.busy=false;} },
       beforeUnload(e){ if(this.dirty){e.preventDefault();e.returnValue='';} },
       beforeTab(){ return !this.busy; },
@@ -108,6 +179,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         for(const[key,spec]of Object.entries(LEGACY))if(this.base.legacy[key]!==draft.legacy[key])out.push({name:spec.label,before:this.legacyText(key,this.base.legacy[key]),after:this.legacyText(key,draft.legacy[key])});return out;
       },
       setBase(base){
+        if(this.phaseObserving)this.resetPhaseWindow();
         const draft=decodeProfile(base.raw);
         if(this.features.perButtonDebounce)draft.buttons=base.buttons.map(value=>({...value}));
         // Vue 2 must observe the complete object, including the per-button fields.
@@ -121,7 +193,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         this.currentFirmware=await client.version();const slot=await client.activeProfile();
         let info;
         try{info=await client.info();}catch(error){if(error.status!==0xa3)throw error;}
-        if(info){this.features=info.features;this.setBase(await client.read(slot));this.telemetry=await client.telemetry();this.setRuntime(await client.runtimeStatus());this.connected=true;}
+        if(info){this.features=info.features;this.setBase(await client.read(slot));this.telemetry=await client.telemetry();this.setRuntime(await client.runtimeStatus());await this.readPhaseSnapshot();this.connected=true;}
         else{this.features=stockFeatures;}
         this.transportTarget=transport.target;this.deviceName='LUNAFURY LUNA33';admittedDevice=device;this.deviceVerified=true;
         this.registerRows.forEach(r=>{r.value=r.baseline=r.undo=null;r.input='';});this.counterRows=[];
@@ -141,11 +213,12 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         },true);
       },
       async disconnect(){
+        this.stopPhaseObservation();this.phaseDiagnostics=null;this.phaseDiagnosticReadAt=0;this.phaseWindow=null;this.phaseDiagnosticError='';this.phaseDiagnosticBusy=false;
         const closing=transport;transport=null;client=null;admittedDevice=null;this.deviceVerified=false;this.connected=false;this.demo=false;this.currentFirmware='';this.features=FULL_FEATURES;this.draft=blank();this.legacy={};this.setRuntime(null);this.base={raw:[],legacy:{},active:1,slot:1};this.reviewVisible=false;pending=null;
         if(closing)await closing.close();release?.();release=null;this.notify('设备已断开。');
       },
       async deviceRemoved(event){if(transport?.device===event.device){await this.disconnect();this.fail(Error('设备已拔出，请重新连接'));}},
-      async readConfig(){await this.guard(async()=>{this.setBase(await client.read(this.slot));this.setRuntime(await client.runtimeStatus());if(this.runtime?.save===3&&this.runtime.attempts>=3)throw Error('保存失败，当前参数尚未写入存储；请重试保存');this.notify(`已重新读取配置 ${this.slot}。`);});},
+      async readConfig(){await this.guard(async()=>{this.setBase(await client.read(this.slot));this.setRuntime(await client.runtimeStatus());await this.readPhaseSnapshot();if(this.runtime?.save===3&&this.runtime.attempts>=3)throw Error('保存失败，当前参数尚未写入存储；请重试保存');this.notify(`已重新读取配置 ${this.slot}。`);});},
       async retrySave(){await this.guard(async()=>{this.notify('正在保存到鼠标存储…');await client.retrySave({onStatus:status=>this.setRuntime(status)});this.setBase(await client.read(this.slot));this.notify('设置已保存，回读核对通过。');});},
       async changeSlot(slot){if(this.dirty){this.slot=this.base.slot;this.$message.warning(this.t('请先应用更改，或重新读取以放弃草稿'));return;}await this.guard(async()=>{try{this.setBase(await client.read(slot));}catch(e){this.slot=this.base.slot;throw e;}});},
       loadPreset(){

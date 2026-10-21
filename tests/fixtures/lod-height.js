@@ -10,7 +10,8 @@ const load = path => new Promise((resolve,reject)=>{
 await load('js/output.xvi3.min.js');await load('js/chunk-vendors.3562a7a5.js');await load('native/vendor-ui.js');
 const definitions=await fetch(assetUrl('advanced/protocol-definitions.json')).then(response=>response.json());
 const options=createOptions(definitions,{addHeaderEntry,acquireDeviceLock:async()=>()=>{}});
-const simulated=new DemoDevice({perButtonDebounce:true,independentDebounce:!new URL(location.href).searchParams.has('shared'),implementationRevision:2});
+const simulated=new DemoDevice({perButtonDebounce:true,independentDebounce:!new URL(location.href).searchParams.has('shared'),implementationRevision:new URL(location.href).searchParams.has('diagnostics')?3:2});
+if(simulated.implementationRevision===3){simulated.phaseCounters.set([1240,0,0,8,0,0,0,2,1,1,0,1]);simulated.phaseReason=3;}
 simulated.collections=[{usagePage:0xffff,featureReports:[{reportId:0,items:[{reportCount:64,reportSize:8}]}]}];
 new window.LunaNative.Vue({...options,render,staticRenderFns,components:{HeaderMain:window.LunaNative.Header},
   data(){const state=options.data();return {...state,riskVisible:false,

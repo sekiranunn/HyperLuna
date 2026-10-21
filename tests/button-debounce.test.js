@@ -138,6 +138,9 @@ for line in sys.stdin:
     const c=new LunaClient({exchange(command,payload,group=1){return new Promise((resolve,reject)=>{waiting.push({resolve,reject});child.stdin.write(JSON.stringify({command,payload:[...payload],group})+'\n');});}},definitions);
     try{
       const features=(await c.info()).features;assert.equal(features.independentDebounce,true);
+      const diagnostic=await c.phaseDiagnostics();
+      if(variant==='ABLODDB')assert.equal(diagnostic,null);
+      else{assert.equal(features.implementationRevision,3);assert.equal(diagnostic.busy,false);assert.equal(diagnostic.frames,0);assert.equal(diagnostic.lastReason,null);}
       assert.equal(features.name,variant);assert.equal(features.buttonCount,5);
       const policy=n=>features.debounce==='ms'?{pre:n,post:n+1,plock:n+2,relock:n+3}:times(n);
       for(let slot=1;slot<=4;slot++)for(let key=0;key<5;key++)await c.putButtonTimings(slot,key,policy(slot*5+key));
