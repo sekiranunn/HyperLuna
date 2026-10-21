@@ -79,7 +79,11 @@ test('editing preserves reserved bytes, supports 0.1 ms and rejects invalid inpu
   assert.throws(() => registerAddress(0, 127)); assert.throws(() => registerAddress(-1, 0));
   assert.match(phaseHint({lock: true, lead: 80}, 4000), /45/);
   assert.match(phaseHint({lock: true, lead: 96}, 4000), /合并/);
-  assert.match(phaseHint({lock: true, lead: 100}, 8000), /跳过/);
+  assert.match(phaseHint({lock: true, lead: 0}, 1000), /80 µs/);
+  assert.match(phaseHint({lock: true, lead: 125}, 2000), /余量 125/);
+  assert.doesNotMatch(phaseHint({lock: true, lead: 249}, 2000), /跳过/);
+  assert.match(phaseHint({lock: true, lead: 250}, 2000), /跳过/);
+  assert.match(phaseHint({lock: true, lead: 100}, 8000), /仅在无线 1000/);
 });
 test('native input text is normalized before validation and cannot silently keep the previous number', () => {
   const device = new DemoDevice(), raw = device.slots[0], methods = createOptions(definitions, {}).methods;

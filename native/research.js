@@ -47,11 +47,11 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       fpsOptions(){return this.features.fps==='presets'?definitions.fps_presets.map((p,i)=>({value:i+1,label:fpsLabel(p)})):[{value:1,label:fpsLabel(definitions.fps_presets[0])}];},
       lodOptions(){return lodHeightOptions(this.base.legacy.lod);},
       debounceDraft(){return this.draft.buttons?.[this.selectedButton]||{};},
-      phaseLead(){return Number(this.draft.lead)||((RATES[this.legacy.polling]===8000)?40:80);},
+      phaseLead(){return Number(this.draft.lead)||80;},
       phaseState(){
         if(!this.draft.lock)return '关闭';
         if(this.slot!==this.base.active)return '未启用的配置';
-        if(this.transportTarget!==2||![2000,4000,8000].includes(RATES[this.legacy.polling]))return '等待无线高回报率';
+        if(this.transportTarget!==2||![1000,2000,4000].includes(RATES[this.legacy.polling]))return '仅支持无线 1 / 2 / 4 kHz';
         if(this.phaseLead<4||this.phaseLead>=Math.floor(500000/RATES[this.legacy.polling]))return '提前量超出范围';
         if(this.draft.lock!==decodeProfile(this.base.raw).lock||Number(this.draft.lead)!==decodeProfile(this.base.raw).lead||this.legacy.polling!==this.base.legacy.polling)return '待应用';
         return ['等待回报','已调节','已跳过','捕获失败'][this.runtime?.phase??0];

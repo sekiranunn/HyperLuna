@@ -3,22 +3,30 @@
   "base": "0x6000",
   "bytes": 99008,
   "source_sha256": {
-    "lunafury-driver/variants/build_variants.py": "07a061e2a4bdf25f9bc5e2b50c030ae51c9854caa76d8cb79a72b1afd082bfe7",
-    "lunafury-driver/variants/build_release.py": "b7087ef54c92ca9241cae8b44a68fec41d91efa5383252069575614f6cc3ee13",
+    "lunafury-driver/variants/build_variants.py": "2d4f2fa1e57d1873b330e4b3a0e1697ef4fb83133dce72744e14c871c51e4da7",
+    "lunafury-driver/variants/build_release.py": "c203277bf25d6b73a0100d5ac8504fb97bdedfbfce868bd88e64dae1c360123b",
     "publishing/HyperLuna/variants/targets.json": "dda0e37c56101011dbdd79551685d4e92f25fce2e967bbee03ad3689d8b2e3d8",
     "lunafury-analysis/port/full_patch.py": "1d0fbceb5fbd6bc9284ca9d65ae582e8747b4727c51bb0f809095eab162494a9",
     "lunafury-analysis/port/button_patch.py": "24130959b3836b8e6287826d65638f5619d122c3db81d0b8fc28acbb0e80c74a",
     "lunafury-analysis/port/switch_patch.py": "479e53df4e7cc915d95fa489a79f29a56aff099327328224b24a20fc0cdb8d7a",
     "lunafury-analysis/port/compact_scripts.py": "4185682c7f96f26ef3f626b7b6342e38e95249fedb979b1ebc42a7dc9088a4ab",
     "lunafury-analysis/port/fw.py": "26940754a4f8e67af3b02c36d9e80432187394dc6807a656961a49d1f65ad875",
-    "lunafury-analysis/port/asm.py": "73e6177155802a99cf3046de4712be7ec0e1baffe3bbe9115b0391d3c28bcc66"
+    "lunafury-analysis/port/asm.py": "73e6177155802a99cf3046de4712be7ec0e1baffe3bbe9115b0391d3c28bcc66",
+    "lunafury-analysis/port/frame_phase_patch.py": "5ecfed42d47a87b3ea4e6fd653e3dc0a6e1bad3227378a156cd033cae29f4472",
+    "lunafury-analysis/port/check_frame_phase.py": "e388d84c6aa98d8660daa0939be35353799b4da8f4b3a97cf4f79ff2cdeecba6",
+    "lunafury-analysis/port/check_full.py": "cb85cffd1ea2227123252ac071b77751f6c4e4e1b2aac0390f8255906707b153",
+    "lunafury-analysis/port/full_model.py": "6953f93a755e47e44d0a769622c9885335921ab971b72c62a1f8eaa7ea5787fb",
+    "lunafury-analysis/port/check_switches.py": "537e9cd54ba9cfc3aa0404f18abe77213b8d9ebc8b7394c8b1ef92238def2e8d",
+    "lunafury-analysis/port/check_fixes.py": "cd108e1b3f9f38df486f21b1ccb3fe4309d5f93e90d9e331de49747a7aad4dd8",
+    "lunafury-driver/variants/check_variants.py": "21f10152ae3939dd7d039bc33eb10f39cd64ccbfd26dda9fa9fdf1b733787a34",
+    "lunafury-driver/variants/check_release.py": "89b0ffe986654287f4df24a27326080eb01fe69b525a4cc117e892d4830b0200"
   },
   "images": [
     {
       "id": "ABLODLOCKDB",
       "name": "ABLODLOCKDB",
       "file": "ABLODLOCKDB.bin",
-      "sha256": "37745c17e18e74f33f422e8e826888e06a048531f36316fda24c7ef5f6423271",
+      "sha256": "5179aee185f9e33f439d6fb3d970cbda9cb955bf4113feaf1e2f6145838dd4b1",
       "bytes": 99008,
       "recommended": true,
       "features": {
@@ -35,7 +43,15 @@
       "implementation_revision": 2,
       "config_storage_version": 4,
       "debounce_schema": 2,
-      "button_count": 5
+      "button_count": 5,
+      "phase_basis": "motion-frame",
+      "phase_rates_hz": [
+        1000,
+        2000,
+        4000
+      ],
+      "phase_default_lead_us": 80,
+      "ack_clock_recovery": true
     },
     {
       "id": "ABLODDB",
@@ -64,7 +80,7 @@
       "id": "ABLODSTATSDB",
       "name": "ABLODSTATSDB",
       "file": "ABLODSTATSDB.bin",
-      "sha256": "5b01d37e732dfc60e422bceac8e21d92cd3f755f51fb13cf2ff48a0969612964",
+      "sha256": "a3454fc6ff7ebb7b72dfed0bb5c5c476f58fc939f78a9440af643e91122bb844",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -81,13 +97,21 @@
       "implementation_revision": 2,
       "config_storage_version": 4,
       "debounce_schema": 2,
-      "button_count": 5
+      "button_count": 5,
+      "phase_basis": "motion-frame",
+      "phase_rates_hz": [
+        1000,
+        2000,
+        4000
+      ],
+      "phase_default_lead_us": 80,
+      "ack_clock_recovery": true
     },
     {
       "id": "ABLODSTATS",
       "name": "ABLODSTATS",
       "file": "ABLODSTATS.bin",
-      "sha256": "0535bae0d7659bd84133461d858a896d773eab324ec334dc222e82c38e65137d",
+      "sha256": "b7bf1a653f8b9b16afb679030fa8a7f051bbfcb7ed2dc7032327b47898a85d2d",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -100,13 +124,21 @@
       "capabilities": 133,
       "hardware_tested": false,
       "implementation_revision": 2,
-      "config_storage_version": 1
+      "config_storage_version": 1,
+      "phase_basis": "motion-frame",
+      "phase_rates_hz": [
+        1000,
+        2000,
+        4000
+      ],
+      "phase_default_lead_us": 80,
+      "ack_clock_recovery": true
     },
     {
       "id": "ABLODLOCK",
       "name": "ABLODLOCK",
       "file": "ABLODLOCK.bin",
-      "sha256": "a5b9f9cd1966dc8455e5be39ee0c07ee902b509370d8e4ac2e110d8d2a53fb88",
+      "sha256": "575edf66d8d997e8a77b99722462b909f0a630567d9228e8e7dd580b490d6f19",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -119,7 +151,15 @@
       "capabilities": 5,
       "hardware_tested": false,
       "implementation_revision": 2,
-      "config_storage_version": 1
+      "config_storage_version": 1,
+      "phase_basis": "motion-frame",
+      "phase_rates_hz": [
+        1000,
+        2000,
+        4000
+      ],
+      "phase_default_lead_us": 80,
+      "ack_clock_recovery": true
     },
     {
       "id": "ABLOD",

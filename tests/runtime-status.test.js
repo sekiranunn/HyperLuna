@@ -97,8 +97,23 @@ test('shared and independent editors preserve other switches and confirm flash b
       assert.equal(vm.draft.landingProtection,false);assert.equal(vm.draft.buttons[1].post,2.3);
       if(independent)assert.equal(vm.draft.buttons[1].enabled,false);else assert.equal(vm.draft.debounce,false);
       if(!independent){const bottom={...vm.base.buttons[5]};vm.loadPreset();assert.deepEqual(vm.draft.buttons[5],bottom);}
-      vm.legacy.polling=128;vm.draft.lead=0;assert.equal(vm.phaseLead,40);
+      vm.legacy.polling=128;vm.draft.lead=0;assert.equal(vm.phaseLead,80);
       vm.legacy.polling=64;assert.equal(vm.phaseLead,80);
     }finally{await vm.disconnect();vm.$destroy();}
   }
+});
+
+test('phase status accepts wireless 1 kHz and keeps wired and 8 kHz outside adjustment',async()=>{
+  const {vm}=await editor(true);
+  try{
+    vm.draft.lock=true;vm.draft.lead=0;vm.slot=vm.base.active;vm.runtime.phase=1;
+    vm.base.raw=encodeProfile(vm.base.raw,{...decodeProfile(vm.base.raw),lock:true,lead:0});
+    vm.transportTarget=2;
+    for(const polling of [1,32,64]){
+      vm.legacy.polling=polling;vm.base.legacy.polling=polling;
+      assert.equal(vm.phaseLead,80);assert.equal(vm.phaseState,'已调节');
+    }
+    vm.legacy.polling=128;assert.equal(vm.phaseState,'仅支持无线 1 / 2 / 4 kHz');
+    vm.legacy.polling=1;vm.transportTarget=0;assert.equal(vm.phaseState,'仅支持无线 1 / 2 / 4 kHz');
+  }finally{await vm.disconnect();vm.$destroy();}
 });

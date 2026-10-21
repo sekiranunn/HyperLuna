@@ -141,9 +141,9 @@ test('Pages artifact keeps verified firmware files while excluding updater code 
   assert.deepEqual(files.filter(path=>path.endsWith('.bin')).map(path=>path.replaceAll('\\','/')).sort(),ids.map(id=>'firmware/'+id+'.bin').sort());
   assert.deepEqual(readdirSync(new URL('firmware/',root)).sort(),ids.map(id=>id+'.bin').sort());
   const perButtonHashes={
-    ABLODLOCKDB:'37745c17e18e74f33f422e8e826888e06a048531f36316fda24c7ef5f6423271',
+    ABLODLOCKDB:'5179aee185f9e33f439d6fb3d970cbda9cb955bf4113feaf1e2f6145838dd4b1',
     ABLODDB:'3e1c464d6d09d0c0bf8e2238a40d6e485d56923e5afe09ff735fa898385ef3ad',
-    ABLODSTATSDB:'5b01d37e732dfc60e422bceac8e21d92cd3f755f51fb13cf2ff48a0969612964'
+    ABLODSTATSDB:'a3454fc6ff7ebb7b72dfed0bb5c5c476f58fc939f78a9440af643e91122bb844'
   };
   for(const [id,sha] of Object.entries(perButtonHashes)){
     const image=catalogue.images.find(image=>image.id===id);
@@ -152,6 +152,10 @@ test('Pages artifact keeps verified firmware files while excluding updater code 
   }
   for(const image of catalogue.images){
     if(image.id!=='stock'){assert.equal(image.implementation_revision,2);assert.equal(image.hardware_tested,false);}
+    if(['ABLODLOCKDB','ABLODSTATSDB','ABLODSTATS','ABLODLOCK'].includes(image.id)){
+      assert.equal(image.phase_basis,'motion-frame');assert.deepEqual(image.phase_rates_hz,[1000,2000,4000]);
+      assert.equal(image.phase_default_lead_us,80);assert.equal(image.ack_clock_recovery,true);
+    }
     const bytes=readFileSync(new URL('firmware/'+image.file,dist));
     assert.equal(bytes.length,99008);assert.equal(createHash('sha256').update(bytes).digest('hex'),image.sha256);
     assert.deepEqual(bytes,readFileSync(new URL('firmware/'+image.file,root)));

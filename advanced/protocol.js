@@ -169,11 +169,11 @@ export function validateLegacy(values, target = 2) {
 }
 export function phaseHint(value, rate) {
   if (!value.lock) return '相位调节已关闭。';
-  if (![2000, 4000, 8000].includes(rate)) return '相位调节仅在无线 2000 / 4000 / 8000 Hz 路径生效。';
-  const lead = value.lead || (rate === 8000 ? 40 : 80), period = 1e6 / rate;
-  if (lead < 4 || lead > period / 2 - 4) return `${lead} µs 超出当前回报率的运行范围，固件会跳过调节。`;
-  const residue = (period - lead) % 125;
-  return `${lead} µs · 周期 ${period} µs · ${residue < 32 ? '进入合并 tick 路径' : `余量 ${residue} µs`}。80 µs 来自本移植实测，不代表原厂默认值。`;
+  if (![1000, 2000, 4000].includes(rate)) return '相位调节仅在无线 1000 / 2000 / 4000 Hz 路径生效。';
+  const lead = value.lead || 80, period = 1e6 / rate;
+  if (lead < 4 || lead >= period / 2) return `${lead} µs 超出当前回报率的运行范围，固件会跳过调节。`;
+  const residue = (period - lead) % 125 || 125;
+  return `${lead} µs · 周期 ${period} µs · ${residue < 32 ? '进入合并 tick 路径' : `余量 ${residue} µs`}。`;
 }
 export function registerAddress(page, reg) {
   if (!Number.isInteger(page) || page < 0 || page > 255 || !Number.isInteger(reg) || reg < 0 || reg >= 127) throw Error('页地址需为 00–FF，寄存器地址需为 00–7E');

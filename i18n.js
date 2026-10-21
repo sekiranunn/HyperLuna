@@ -23,7 +23,7 @@ export const messages = [
   ['全部按键启用', 'Enable for all buttons', 'すべてのボタンに適用'],
   ['自动提前量', 'Automatic lead', '自動先行時間'],
   ['当前提前量', 'Configured lead', '設定した先行時間'],
-  ['等待无线高回报率', 'Waiting for wireless 2–8 kHz', 'ワイヤレス 2～8 kHz を待機中'],
+  ['仅支持无线 1 / 2 / 4 kHz', 'Wireless 1 / 2 / 4 kHz only', 'ワイヤレス 1 / 2 / 4 kHz のみ対応'],
   ['提前量超出范围', 'Lead out of range', '先行時間が範囲外です'],
   ['待应用', 'Not applied', '未適用'],
   ['等待回报', 'Waiting for a report', 'レポートを待機中'],
