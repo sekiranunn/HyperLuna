@@ -17,10 +17,11 @@ test('revision 2 recognizes all six release capabilities and rejects unknown fla
   assert.equal(reply.length,23);
   for(const [i,variant] of VARIANTS.entries()){
     const r=reply.slice();r[17]=i+1;r[18]=variant.mask;
-    if(i<3){r[19]=1;r[20]=6;}
+    if(i<3){r[19]=2;r[20]=5;}
     const features=decodeFeatures(r);
     assert.equal(features.name,variant.name);assert.equal(features.runtimeStatus,true);
     assert.equal(features.landingPolicy,i<3);assert.equal(Boolean(features.perButtonDebounce),i<3);
+    assert.equal(Boolean(features.independentDebounce),i<3);
     for(const offset of [21,22]){const bad=r.slice();bad[offset]^=128;assert.throws(()=>decodeFeatures(bad));}
   }
 });

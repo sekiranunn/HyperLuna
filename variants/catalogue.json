@@ -3,12 +3,12 @@
   "base": "0x6000",
   "bytes": 99008,
   "source_sha256": {
-    "lunafury-driver/variants/build_variants.py": "f720019e6ec5f811c68d1229fc7724524fc49372087d05c1b48b498e65a7148b",
-    "lunafury-driver/variants/build_release.py": "309c8ac97d072605b6ff15ec89b3dd8e2644c058f90a1abc51198a406571ac03",
-    "publishing/HyperLuna/variants/targets.json": "c8400130a87efb76f8323143595953bd34d65b8517922eb320bdd2f90e6ebc95",
+    "lunafury-driver/variants/build_variants.py": "07a061e2a4bdf25f9bc5e2b50c030ae51c9854caa76d8cb79a72b1afd082bfe7",
+    "lunafury-driver/variants/build_release.py": "b7087ef54c92ca9241cae8b44a68fec41d91efa5383252069575614f6cc3ee13",
+    "publishing/HyperLuna/variants/targets.json": "dda0e37c56101011dbdd79551685d4e92f25fce2e967bbee03ad3689d8b2e3d8",
     "lunafury-analysis/port/full_patch.py": "1d0fbceb5fbd6bc9284ca9d65ae582e8747b4727c51bb0f809095eab162494a9",
     "lunafury-analysis/port/button_patch.py": "24130959b3836b8e6287826d65638f5619d122c3db81d0b8fc28acbb0e80c74a",
-    "lunafury-analysis/port/switch_patch.py": "bcc4a8a852b4dcc3f4dc423cecd123cacf97c2e0a51510683fac0f227e8bcac4",
+    "lunafury-analysis/port/switch_patch.py": "479e53df4e7cc915d95fa489a79f29a56aff099327328224b24a20fc0cdb8d7a",
     "lunafury-analysis/port/compact_scripts.py": "4185682c7f96f26ef3f626b7b6342e38e95249fedb979b1ebc42a7dc9088a4ab",
     "lunafury-analysis/port/fw.py": "26940754a4f8e67af3b02c36d9e80432187394dc6807a656961a49d1f65ad875",
     "lunafury-analysis/port/asm.py": "73e6177155802a99cf3046de4712be7ec0e1baffe3bbe9115b0391d3c28bcc66"
@@ -18,7 +18,7 @@
       "id": "ABLODLOCKDB",
       "name": "ABLODLOCKDB",
       "file": "ABLODLOCKDB.bin",
-      "sha256": "83cd489501adb8b87cf1ea2892c1c64eefe09a2a603dcee7e6bea7991b8d1547",
+      "sha256": "37745c17e18e74f33f422e8e826888e06a048531f36316fda24c7ef5f6423271",
       "bytes": 99008,
       "recommended": true,
       "features": {
@@ -26,21 +26,22 @@
         "debounce": "fine",
         "fps": "presets",
         "stats": false,
-        "per_button_debounce": true
+        "per_button_debounce": true,
+        "independent_debounce": true
       },
       "variant_id": 1,
       "capabilities": 43,
       "hardware_tested": false,
       "implementation_revision": 2,
-      "config_storage_version": 3,
-      "debounce_schema": 1,
-      "button_count": 6
+      "config_storage_version": 4,
+      "debounce_schema": 2,
+      "button_count": 5
     },
     {
       "id": "ABLODDB",
       "name": "ABLODDB",
       "file": "ABLODDB.bin",
-      "sha256": "a5d5a5cd6285ff2feb8fa107ea068641db0a717f7c1badda22b2c3731c6a8d12",
+      "sha256": "3e1c464d6d09d0c0bf8e2238a40d6e485d56923e5afe09ff735fa898385ef3ad",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -48,21 +49,22 @@
         "debounce": "fine",
         "fps": "presets",
         "stats": false,
-        "per_button_debounce": true
+        "per_button_debounce": true,
+        "independent_debounce": true
       },
       "variant_id": 2,
       "capabilities": 41,
       "hardware_tested": false,
       "implementation_revision": 2,
-      "config_storage_version": 3,
-      "debounce_schema": 1,
-      "button_count": 6
+      "config_storage_version": 4,
+      "debounce_schema": 2,
+      "button_count": 5
     },
     {
       "id": "ABLODSTATSDB",
       "name": "ABLODSTATSDB",
       "file": "ABLODSTATSDB.bin",
-      "sha256": "43dd5ffa72c552eb1d421cb5002cac1d840744548825f46848ae27f2f31a2402",
+      "sha256": "5b01d37e732dfc60e422bceac8e21d92cd3f755f51fb13cf2ff48a0969612964",
       "bytes": 99008,
       "recommended": false,
       "features": {
@@ -70,15 +72,16 @@
         "debounce": "ms",
         "fps": "hyperfps",
         "stats": true,
-        "per_button_debounce": true
+        "per_button_debounce": true,
+        "independent_debounce": true
       },
       "variant_id": 3,
       "capabilities": 213,
       "hardware_tested": false,
       "implementation_revision": 2,
-      "config_storage_version": 3,
-      "debounce_schema": 1,
-      "button_count": 6
+      "config_storage_version": 4,
+      "debounce_schema": 2,
+      "button_count": 5
     },
     {
       "id": "ABLODSTATS",

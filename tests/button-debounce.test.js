@@ -112,13 +112,15 @@ test('a change to another key after preview prevents any write',async()=>{
 
 const port=fileURLToPath(new URL('../../../lunafury-analysis/port',import.meta.url));
 const python=fileURLToPath(new URL('../../../.hyperdrako-analysis-venv/Scripts/python.exe',import.meta.url));
-test('browser client writes 20 policies and all 32 switch combinations on candidate ARM code',
-  {timeout:60000,skip:!existsSync(port+'/switch_patch.py')||!existsSync(python)},async()=>{
+test('browser client writes all five-key policies and switch masks on each published DB ARM image',
+  {timeout:120000,skip:!existsSync(port+'/switch_patch.py')||!existsSync(python)},async()=>{
+    for(const variant of ['ABLODLOCKDB','ABLODDB','ABLODSTATSDB']){
     const code=`import sys,json
+from pathlib import Path
 sys.path.insert(0,sys.argv[1])
-import switch_patch,full_model
-full_model.STATE=switch_patch.STATE
-m=full_model.FullModel(*switch_patch.build())
+sys.path.insert(0,str(Path(sys.argv[1]).parents[1]/'lunafury-driver/variants'))
+import build_variants,full_model
+m=full_model.FullModel(*build_variants.build(sys.argv[2]))
 for line in sys.stdin:
  try:
   q=json.loads(line)
@@ -126,7 +128,7 @@ for line in sys.stdin:
   print(json.dumps({'reply':list(r)}),flush=True)
  except Exception as e: print(json.dumps({'error':str(e)}),flush=True)
 `;
-    const child=spawn(python,['-X','utf8','-B','-c',code,port],{stdio:['pipe','pipe','pipe'],windowsHide:true});
+    const child=spawn(python,['-X','utf8','-B','-c',code,port,variant],{stdio:['pipe','pipe','pipe'],windowsHide:true});
     const waiting=[];let stderr='';
     child.stderr.on('data',data=>{stderr+=data;});
     child.on('error',error=>{while(waiting.length)waiting.shift().reject(error);});
@@ -136,8 +138,10 @@ for line in sys.stdin:
     const c=new LunaClient({exchange(command,payload,group=1){return new Promise((resolve,reject)=>{waiting.push({resolve,reject});child.stdin.write(JSON.stringify({command,payload:[...payload],group})+'\n');});}},definitions);
     try{
       const features=(await c.info()).features;assert.equal(features.independentDebounce,true);
-      for(let slot=1;slot<=4;slot++)for(let key=0;key<5;key++)await c.putButtonTimings(slot,key,times(slot*5+key));
-      for(let slot=1;slot<=4;slot++)for(let key=0;key<5;key++)assert.deepEqual(await c.getButtonTimings(slot,key),times(slot*5+key));
+      assert.equal(features.name,variant);assert.equal(features.buttonCount,5);
+      const policy=n=>features.debounce==='ms'?{pre:n,post:n+1,plock:n+2,relock:n+3}:times(n);
+      for(let slot=1;slot<=4;slot++)for(let key=0;key<5;key++)await c.putButtonTimings(slot,key,policy(slot*5+key));
+      for(let slot=1;slot<=4;slot++)for(let key=0;key<5;key++)assert.deepEqual(await c.getButtonTimings(slot,key),policy(slot*5+key));
       for(let mask=0;mask<32;mask++){
         const raw=await c.getProfile(1),value=decodeProfile(raw);
         value.buttons=Array.from({length:5},(_,key)=>({enabled:Boolean(mask&(1<<key))}));
@@ -146,4 +150,5 @@ for line in sys.stdin:
       }
       await assert.rejects(c.getButtonTimings(1,5),/按键编号/);
     }finally{child.stdin.end();lines.close();child.kill();}
+    }
   });
