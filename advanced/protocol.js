@@ -150,7 +150,7 @@ export function encodeProfile(original, value, fpsCount = 34, features) {
     raw[4]=Number(mask!==0);raw[5]=128|mask;
   }
   if(features?.landingPolicy){
-    if(typeof value.landingProtection!=='boolean')throw Error('无效的落地保护设置');
+    if(typeof value.landingProtection!=='boolean')throw Error('无效的抬鼠复位防误触设置');
     raw[14]=Number(!value.landingProtection);raw[15]=0;
   }
   ['pre', 'post', 'plock', 'relock'].forEach((key, i) => {

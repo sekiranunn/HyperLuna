@@ -19,7 +19,7 @@ export function applyDocumentLanguage(language) {
 // Chinese is the canonical UI/error text. Translate at render time so an open
 // confirmation or an existing status message follows the header's language.
 export const messages = [
-  ['落地保护', 'Landing protection', '着地保護'],
+  ['抬鼠复位防误触', 'Lift-off reset click protection', 'リフト復帰時の誤クリック防止'],
   ['全部按键启用', 'Enable for all buttons', 'すべてのボタンに適用'],
   ['自动提前量', 'Automatic lead', '自動先行時間'],
   ['当前提前量', 'Configured lead', '設定した先行時間'],
@@ -38,7 +38,7 @@ export const messages = [
   ['设置已写入，回读核对通过。', 'Settings written and readback verified.', '設定を書き込み、読み戻し値を確認しました。'],
   ['当前固件不支持保存状态', 'This firmware does not report save status.', 'このファームウェアは保存状態の取得に対応していません。'],
   ['无效的固件状态响应', 'Invalid firmware status response.', 'ファームウェアの状態応答が無効です。'],
-  ['无效的落地保护设置', 'Invalid landing protection setting.', '着地保護の設定が無効です。'],
+  ['无效的抬鼠复位防误触设置', 'Invalid lift-off reset click protection setting.', 'リフト復帰時の誤クリック防止の設定が無効です。'],
   ['当前固件不支持 HyperLuna 扩展，请使用官方设置。', 'This firmware does not support the HyperLuna extensions. Use Official settings.', 'このファームウェアは HyperLuna の拡張機能に対応していません。公式設定をご利用ください。'],
   ['官方设置', 'Official settings', '公式設定'],
   ['未连接设备', 'No device connected', 'デバイス未接続'],

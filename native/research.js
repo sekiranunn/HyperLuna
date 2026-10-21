@@ -6,7 +6,7 @@ import {FIRMWARE_NOTICE, isLuna33, requireLuna33} from '../device-access.js';
 import {lodLabel, lodHeightOptions} from '../advanced/lod.js';
 import {translate, savedLanguage, normalizeLanguage, applyDocumentLanguage} from '../i18n.js';
 const stockFeatures = {name:'官方固件',fps:'none',phase:'none',debounce:'none',stats:false};
-const patchNames = {fps:'FPS 预设',lock:'相位调节',lead:'相位提前量',debounce:'自定义消抖',landingProtection:'落地保护',pre:'按下前滤波',post:'按下后滤波',plock:'按下锁定',relock:'松开锁定'};
+const patchNames = {fps:'FPS 预设',lock:'相位调节',lead:'相位提前量',debounce:'自定义消抖',landingProtection:'抬鼠复位防误触',pre:'按下前滤波',post:'按下后滤波',plock:'按下锁定',relock:'松开锁定'};
 const blank = () => ({fps:null,lock:false,lead:undefined,debounce:false,landingProtection:true,pre:undefined,post:undefined,plock:undefined,relock:undefined});
 function fpsLabel(preset) {
   if (!preset) return '';
