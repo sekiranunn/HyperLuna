@@ -111,9 +111,28 @@ test('phase status accepts wireless 1 kHz and keeps wired and 8 kHz outside adju
     vm.transportTarget=2;
     for(const polling of [1,32,64]){
       vm.legacy.polling=polling;vm.base.legacy.polling=polling;
-      assert.equal(vm.phaseLead,80);assert.equal(vm.phaseState,'已调节');
+      assert.equal(vm.phaseLead,80);assert.equal(vm.phaseState,'上次调节成功');
     }
     vm.legacy.polling=128;assert.equal(vm.phaseState,'仅支持无线 1 / 2 / 4 kHz');
     vm.legacy.polling=1;vm.transportTarget=0;assert.equal(vm.phaseState,'仅支持无线 1 / 2 / 4 kHz');
+  }finally{await vm.disconnect();vm.$destroy();}
+});
+
+test('manual phase refresh timestamps the snapshot and preserves unsaved settings',async()=>{
+  const {vm,device}=await editor(true);
+  try{
+    vm.draft.lead=97;vm.draft.buttons[1].post=2.7;
+    const draft=JSON.stringify(vm.draft),base=JSON.stringify(vm.base),requests=[];
+    const send=device.sendFeatureReport.bind(device);
+    device.sendFeatureReport=async(id,payload)=>{requests.push([payload[5],payload[9]]);return send(id,payload);};
+    assert.ok(vm.runtimeReadAt>0);assert.ok(vm.phaseReadTime);
+    await vm.refreshPhaseStatus();
+    assert.deepEqual(requests,[[126,10]]);
+    assert.equal(JSON.stringify(vm.draft),draft);assert.equal(JSON.stringify(vm.base),base);
+    vm.setRuntime({...vm.runtime,phase:2});
+    vm.draft.lock=true;vm.draft.lead=80;vm.transportTarget=2;vm.legacy.polling=64;vm.base.legacy.polling=64;
+    vm.base.raw=encodeProfile(vm.base.raw,{...decodeProfile(vm.base.raw),lock:true,lead:80});
+    assert.equal(vm.phaseState,'上次调节跳过');
+    await vm.disconnect();assert.equal(vm.runtimeReadAt,0);assert.equal(vm.phaseReadTime,'');
   }finally{await vm.disconnect();vm.$destroy();}
 });

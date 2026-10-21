@@ -36,7 +36,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
   return {
     data() { return {definitions,language:savedLanguage(),headerUpdater:new window.XviUpdater(),themeMode:'1',tab:'settings',connected:false,demo:false,busy:false,deviceName:'',currentFirmware:'',transportTarget:2,slot:1,
       riskVisible:true,riskAcknowledged:false,firmwareNotice:FIRMWARE_NOTICE,deviceVerified:false,
-      base:{raw:[],legacy:{},active:1,slot:1},draft:blank(),legacy:{},message:'',hasError:false,telemetry:false,activity:[],counterRows:[],features:FULL_FEATURES,buttons:BUTTONS,selectedButton:0,runtime:null,
+      base:{raw:[],legacy:{},active:1,slot:1},draft:blank(),legacy:{},message:'',hasError:false,telemetry:false,activity:[],counterRows:[],features:FULL_FEATURES,buttons:BUTTONS,selectedButton:0,runtime:null,runtimeReadAt:0,
       registerRows:WATCH.map(([page,reg,label])=>({key:registerAddress(page,reg),page,reg,label,value:null,baseline:null,input:'',undo:null})),pageHex:'18',addressHex:'7A',
       rates:[[8,125],[4,250],[2,500],[1,1000],[16,1000],[32,2000],[64,4000],[128,8000]].map(([value,label])=>({value,label:`${label} Hz`})),
       debounceFields:[{key:'pre',label:'按下前滤波'},{key:'post',label:'按下后滤波'},{key:'plock',label:'按下锁定'},{key:'relock',label:'松开锁定'}],
@@ -48,13 +48,14 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       lodOptions(){return lodHeightOptions(this.base.legacy.lod);},
       debounceDraft(){return this.draft.buttons?.[this.selectedButton]||{};},
       phaseLead(){return Number(this.draft.lead)||80;},
+      phaseReadTime(){return this.runtimeReadAt?new Date(this.runtimeReadAt).toLocaleTimeString({ZH:'zh-CN',EN:'en-GB',JPN:'ja-JP'}[this.language],{hour12:false}):'';},
       phaseState(){
         if(!this.draft.lock)return '关闭';
         if(this.slot!==this.base.active)return '未启用的配置';
         if(this.transportTarget!==2||![1000,2000,4000].includes(RATES[this.legacy.polling]))return '仅支持无线 1 / 2 / 4 kHz';
         if(this.phaseLead<4||this.phaseLead>=Math.floor(500000/RATES[this.legacy.polling]))return '提前量超出范围';
         if(this.draft.lock!==decodeProfile(this.base.raw).lock||Number(this.draft.lead)!==decodeProfile(this.base.raw).lead||this.legacy.polling!==this.base.legacy.polling)return '待应用';
-        return ['等待回报','已调节','已跳过','捕获失败'][this.runtime?.phase??0];
+        return ['尚无调节结果','上次调节成功','上次调节跳过','上次捕获失败'][this.runtime?.phase??0];
       },
       dirty() { if (!this.connected) return false; try { return this.changeRows(this.collectDraft()).length > 0; } catch { return true; } },
     },
@@ -73,6 +74,8 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       log(text){ this.activity.push(`${new Date().toLocaleTimeString()}  ${text}`); if(this.activity.length>200)this.activity.shift(); },
       fail(error){ this.message=error.message||String(error); this.hasError=true; this.$message.error(this.t(this.message)); this.log(this.message); },
       notify(text){ this.message=text; this.hasError=false; },
+      setRuntime(status){this.runtime=status;this.runtimeReadAt=status?Date.now():0;},
+      async refreshPhaseStatus(){await this.guard(async()=>{this.setRuntime(await client.runtimeStatus());});},
       async guard(work,connecting=false) { if(this.busy)return; this.busy=true; try { if(!connecting)requireAccess();await work(); } catch(e){this.fail(e);} finally{this.busy=false;} },
       beforeUnload(e){ if(this.dirty){e.preventDefault();e.returnValue='';} },
       beforeTab(){ return !this.busy; },
@@ -118,7 +121,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         this.currentFirmware=await client.version();const slot=await client.activeProfile();
         let info;
         try{info=await client.info();}catch(error){if(error.status!==0xa3)throw error;}
-        if(info){this.features=info.features;this.setBase(await client.read(slot));this.telemetry=await client.telemetry();this.runtime=await client.runtimeStatus();this.connected=true;}
+        if(info){this.features=info.features;this.setBase(await client.read(slot));this.telemetry=await client.telemetry();this.setRuntime(await client.runtimeStatus());this.connected=true;}
         else{this.features=stockFeatures;}
         this.transportTarget=transport.target;this.deviceName='LUNAFURY LUNA33';admittedDevice=device;this.deviceVerified=true;
         this.registerRows.forEach(r=>{r.value=r.baseline=r.undo=null;r.input='';});this.counterRows=[];
@@ -138,12 +141,12 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         },true);
       },
       async disconnect(){
-        const closing=transport;transport=null;client=null;admittedDevice=null;this.deviceVerified=false;this.connected=false;this.demo=false;this.currentFirmware='';this.features=FULL_FEATURES;this.draft=blank();this.legacy={};this.runtime=null;this.base={raw:[],legacy:{},active:1,slot:1};this.reviewVisible=false;pending=null;
+        const closing=transport;transport=null;client=null;admittedDevice=null;this.deviceVerified=false;this.connected=false;this.demo=false;this.currentFirmware='';this.features=FULL_FEATURES;this.draft=blank();this.legacy={};this.setRuntime(null);this.base={raw:[],legacy:{},active:1,slot:1};this.reviewVisible=false;pending=null;
         if(closing)await closing.close();release?.();release=null;this.notify('设备已断开。');
       },
       async deviceRemoved(event){if(transport?.device===event.device){await this.disconnect();this.fail(Error('设备已拔出，请重新连接'));}},
-      async readConfig(){await this.guard(async()=>{this.setBase(await client.read(this.slot));this.runtime=await client.runtimeStatus();if(this.runtime?.save===3&&this.runtime.attempts>=3)throw Error('保存失败，当前参数尚未写入存储；请重试保存');this.notify(`已重新读取配置 ${this.slot}。`);});},
-      async retrySave(){await this.guard(async()=>{this.notify('正在保存到鼠标存储…');await client.retrySave({onStatus:status=>{this.runtime=status;}});this.setBase(await client.read(this.slot));this.notify('设置已保存，回读核对通过。');});},
+      async readConfig(){await this.guard(async()=>{this.setBase(await client.read(this.slot));this.setRuntime(await client.runtimeStatus());if(this.runtime?.save===3&&this.runtime.attempts>=3)throw Error('保存失败，当前参数尚未写入存储；请重试保存');this.notify(`已重新读取配置 ${this.slot}。`);});},
+      async retrySave(){await this.guard(async()=>{this.notify('正在保存到鼠标存储…');await client.retrySave({onStatus:status=>this.setRuntime(status)});this.setBase(await client.read(this.slot));this.notify('设置已保存，回读核对通过。');});},
       async changeSlot(slot){if(this.dirty){this.slot=this.base.slot;this.$message.warning(this.t('请先应用更改，或重新读取以放弃草稿'));return;}await this.guard(async()=>{try{this.setBase(await client.read(slot));}catch(e){this.slot=this.base.slot;throw e;}});},
       loadPreset(){
         if(!this.connected||this.busy)return;
@@ -168,7 +171,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
           if(!equal(current,draft.raw))await client.putProfile(expected.slot,draft.raw);
           if(this.features.perButtonDebounce)for(let key=1;key<this.features.buttonCount;key++)if(TIMING_KEYS.some(name=>fresh.buttons[key][name]!==draft.patch.buttons[key][name]))await client.putButtonTimings(expected.slot,key,draft.patch.buttons[key]);
           const final=await client.read(expected.slot);if(!equal(final.raw,draft.raw)||Object.keys(LEGACY).some(key=>final.legacy[key]!==draft.legacy[key])||(this.features.perButtonDebounce&&!equalButtons(final.buttons,draft.patch.buttons)))throw Error('最终配置与请求值不同');
-          if(this.features.runtimeStatus){this.notify('正在保存到鼠标存储…');await client.waitForSave({onStatus:status=>{this.runtime=status;}});}
+          if(this.features.runtimeStatus){this.notify('正在保存到鼠标存储…');await client.waitForSave({onStatus:status=>this.setRuntime(status)});}
           this.setBase(final);this.notify(this.demo?'演示参数已更新并回读。':this.features.runtimeStatus?'设置已保存，回读核对通过。':'设置已写入，回读核对通过。');this.log('扩展配置保存与回读完成');
         }catch(e){try{this.setBase(await client.read(expected.slot));}catch{}throw Error(`部分设置可能已生效：${e.message}，请以重新读取为准`);}
       },
@@ -180,7 +183,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       snapshot(){return{format:'lunafury-lf33-snapshot-v1',demo:lastSource?.demo??false,device:lastSource,at:new Date().toISOString(),config:this.connected?this.base:null,registers:Object.fromEntries(this.registerRows.filter(r=>r.value!==null).map(r=>[r.key,r.value]))};},
       exportSnapshot(){download(`Luna33-${this.demo?'DEMO-':''}snapshot-${Date.now()}.json`,this.snapshot());},
       async importSnapshot(event){try{const file=event.target.files[0];if(!file)return;if(file.size>262144)throw Error('快照需小于 256 KiB');const data=JSON.parse(await file.text());if(data.format!=='lunafury-lf33-snapshot-v1'||data.demo!==this.demo||!this.connected)throw Error('请连接同一模式的设备，再导入对应快照');const entries=Object.entries(data.registers||{});if(entries.length>256)throw Error('快照地址过多');const valid=entries.map(([key,value])=>{if(!/^[\da-f]{2}:[\da-f]{2}$/i.test(key)||!Number.isInteger(value)||value<0||value>255)throw Error('无效的快照数据');const[page,reg]=key.split(':').map(v=>parseInt(v,16));return{key:registerAddress(page,reg),page,reg,value};});for(const item of valid){let row=this.registerRows.find(r=>r.key===item.key);if(!row){row={key:item.key,page:item.page,reg:item.reg,label:'导入地址',value:null,baseline:null,input:'',undo:null};this.registerRows.push(row);}row.baseline=item.value;}this.notify('已导入对比基线');}catch(e){this.fail(e);}finally{event.target.value='';}},
-      async readStatistics(){await this.guard(async()=>{this.telemetry=await client.telemetry();const values=await client.statistics();this.runtime=await client.runtimeStatus();if(this.runtime)Object.assign(values,{clock_pause_seen:Number(this.runtime.clockPaused),invalid_age_snapshots:this.runtime.invalidAges});this.counterRows=Object.entries(values).map(([name,value])=>({name,value:value.toLocaleString()}));this.notify('已读取计数器');});},
+      async readStatistics(){await this.guard(async()=>{this.telemetry=await client.telemetry();const values=await client.statistics();this.setRuntime(await client.runtimeStatus());if(this.runtime)Object.assign(values,{clock_pause_seen:Number(this.runtime.clockPaused),invalid_age_snapshots:this.runtime.invalidAges});this.counterRows=Object.entries(values).map(([name,value])=>({name,value:value.toLocaleString()}));this.notify('已读取计数器');});},
       async toggleTelemetry(){await this.guard(async()=>{this.telemetry=await client.telemetry();this.telemetry=await client.telemetry(Number(!this.telemetry));this.notify(`遥测已${this.telemetry?'开启':'关闭'}`);});},
       resetStatistics(){this.review('清零计数器','清零全部计数器',[{name:'累计计数',before:'当前值',after:'0'}],async()=>{await client.extension(4,0);this.counterRows=[];this.notify('计数器已清零。');});},
       exportLog(){download(`Luna33-${lastSource?.demo?'DEMO-':''}log-${Date.now()}.json`,{...this.snapshot(),transactions:records,activity:this.activity,counters:this.counterRows,runtime:this.runtime});}

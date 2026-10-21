@@ -19,6 +19,15 @@ export function applyDocumentLanguage(language) {
 // Chinese is the canonical UI/error text. Translate at render time so an open
 // confirmation or an existing status message follows the header's language.
 export const messages = [
+  ['目标提前量', 'Target lead', '目標先行時間'],
+  ['自动', 'Automatic', '自動'],
+  ['上次调节成功', 'Last adjustment succeeded', '前回の調整は成功'],
+  ['上次调节跳过', 'Last adjustment skipped', '前回の調整はスキップ'],
+  ['上次捕获失败', 'Last capture failed', '前回のキャプチャは失敗'],
+  ['尚无调节结果', 'No adjustment result yet', '調整結果はまだありません'],
+  ['上次读取 {time}', 'Last read {time}', '最終読み取り {time}'],
+  ['尚未读取状态', 'Status not read yet', '状態は未取得です'],
+  ['刷新状态', 'Refresh status', '状態を更新'],
   ['抬鼠复位防误触', 'Lift-off reset click protection', 'リフト復帰時の誤クリック防止'],
   ['全部按键启用', 'Enable for all buttons', 'すべてのボタンに適用'],
   ['自动提前量', 'Automatic lead', '自動先行時間'],
