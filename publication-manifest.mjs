@@ -19,7 +19,7 @@ export const stockImage = {
   sha256:'416f47366144d1773f37cc6b993f8f43332dba2746bc9cce13e732c038b93057'
 };
 export function publicCatalogue(catalogue) {
-  const keys = ['id','name','file','sha256','bytes','recommended','features','variant_id','capabilities','hardware_tested','debounce_schema','button_count','implementation_revision','config_storage_version','phase_basis','phase_rates_hz','phase_default_lead_us','ack_clock_recovery','phase_diagnostics','phase_diagnostic_counters'];
+  const keys = ['id','name','file','sha256','bytes','recommended','features','variant_id','capabilities','hardware_tested','debounce_schema','button_count','implementation_revision','config_storage_version','phase_basis','phase_rates_hz','phase_default_lead_us','ack_clock_recovery','phase_diagnostics','phase_diagnostic_counters','phase_deferred','phase_guard_us'];
   return {application:'Luna33', base:'0x6000', bytes:99008,
     images:catalogue.images.map(image => Object.fromEntries(keys.filter(key => key in image).map(key => [key,image[key]])))};
 }
