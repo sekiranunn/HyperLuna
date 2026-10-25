@@ -29,7 +29,7 @@ function device(){
 test('five independent switches reject unknown schemas and exclude the bottom button',async()=>{
   const d=device();await d.sendFeatureReport(0,packet(126,[76,70,1,0]));
   const r=normalize(await d.receiveFeatureReport(0));
-  assert.equal(r.length,21);assert.equal(decodeFeatures(r).perButtonDebounce,true);
+  assert.equal(r.length,23);assert.equal(decodeFeatures(r).perButtonDebounce,true);
   assert.equal(decodeFeatures(r).independentDebounce,true);assert.equal(decodeFeatures(r).buttonCount,5);
   for(const [offset,value] of [[17,99],[18,0],[19,3],[20,6],[20,7]]){
     const bad=r.slice();bad[offset]=value;assert.throws(()=>decodeFeatures(bad));
@@ -66,7 +66,7 @@ test('every button and profile stays independent; a lost write ACK uses readback
   const count=records.length;
   for(const [slot,key] of [[0,0],[5,0],[1,-1],[1,5],[1,6],[1,0.5]])await assert.rejects(c.putButtonTimings(slot,key,times(1)));
   assert.equal(records.length,count);await t.close();
-  const legacy=new LunaClient(new HidTransport(new DemoDevice(),{interval:1}),definitions);await legacy.info();
+  const legacy=new LunaClient(new HidTransport(new DemoDevice({variantId:6,perButtonDebounce:false,independentDebounce:false}),{interval:1}),definitions);await legacy.info();
   await assert.rejects(legacy.putButtonTimings(1,0,times(1)),/不支持逐键/);await legacy.transport.close();
 });
 
@@ -110,11 +110,11 @@ test('a change to another key after preview prevents any write',async()=>{
   await assert.rejects(vm.applySettings(draft,expected),/其他操作改变/);assert.equal(writes,0);await vm.disconnect();
 });
 
-const port=fileURLToPath(new URL('../../../lunafury-analysis/port',import.meta.url));
-const python=fileURLToPath(new URL('../../../.hyperdrako-analysis-venv/Scripts/python.exe',import.meta.url));
+const port=fileURLToPath(new URL('../../lunafury-analysis/port',import.meta.url));
+const python=fileURLToPath(new URL('../../.hyperdrako-analysis-venv/Scripts/python.exe',import.meta.url));
 test('browser client writes all five-key policies and switch masks on each published DB ARM image',
   {timeout:120000,skip:!existsSync(port+'/switch_patch.py')||!existsSync(python)},async()=>{
-    for(const variant of ['ABLODLOCKDB','ABLODDB','ABLODSTATSDB']){
+    for(const variant of ['ABLODDB']){
     const code=`import sys,json
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])

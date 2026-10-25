@@ -12,14 +12,12 @@ export const WATCH = [
   [5, 0x6e, '模式脚本'], [9, 0x40, '模式脚本']
 ];
 export class DemoDevice {
-  constructor({perButtonDebounce=false,independentDebounce=false,implementationRevision=0,variantId=0}={}) {
+  constructor({perButtonDebounce=false,independentDebounce=true,implementationRevision=25,variantId=2}={}) {
     this.vendorId = 0x373e; this.productId = 0x0033; this.productName = 'Luna33 · 模拟设备'; this.opened = true;
-    this.slots = Array.from({length: 4}, (_, i) => Uint8Array.from(i ? new Array(16).fill(0) : [7, 1, 80, 0, 1, 0, 0, 0, 15, 0, 0, 0, 100, 0, 0, 0]));
+    this.slots = Array.from({length: 4}, (_, i) => Uint8Array.from(i ? new Array(16).fill(0) : [7, 0, 0, 0, 1, 0, 0, 0, 15, 0, 0, 0, 100, 0, 0, 0]));
     this.perButtonDebounce=perButtonDebounce||independentDebounce;this.independentDebounce=independentDebounce;
-    this.implementationRevision=implementationRevision;this.saveState=2;this.saveError=0;this.phase=1;this.clockPaused=0;this.invalidAges=0;this.statusQueue=[];
+    this.implementationRevision=implementationRevision;this.saveState=2;this.saveError=0;this.clockPaused=0;this.invalidAges=0;this.statusQueue=[];
     this.variantId=variantId;
-    this.reference={captureValid:true,packetPending:false,txStampValid:false,period:250,lead:80,lastLocal:0,lastTick:0,valid:false,confidence:0,state:1,pending:0,accepted:0,rejected:0,expired:0,lastError:0,timestampRejected:0};
-    this.phaseCounters=new Uint32Array(12);this.phaseCounters[0]=implementationRevision===3?1:0;this.phaseReason=0;this.phaseDiagnosticVersion=1;
     this.buttonCount=independentDebounce?5:6;
     this.buttons=this.slots.map(raw=>Array.from({length:this.buttonCount},()=>raw.slice(6,14)));
     this.legacy = Array.from({length: 4}, () => ({polling: 64, scan_rate: 64, hyper: 1, tracking: 0, lod: 138, motion_sync: 0, angle_snap: 0, ripple: 0, scan_sequence: 0}));
@@ -34,7 +32,7 @@ export class DemoDevice {
     if (command === 0x7e) {
       const op = data[3], args = data.slice(4), prefix = Array.from(data.slice(0, 4));
       switch (op) {
-        case 0: payload = [...prefix, 76, 70, 51, 51, 1, 34, 32,...(this.perButtonDebounce||this.implementationRevision?[this.variantId,this.variantId?VARIANTS[this.variantId-1].mask:171,this.perButtonDebounce?(this.independentDebounce?2:1):0,this.perButtonDebounce?this.buttonCount:0]:[]),...(this.implementationRevision?[this.implementationRevision,this.implementationRevision===4?31:this.implementationRevision===3?15:7]:[])]; break;
+        case 0: payload = [...prefix, 76, 70, 51, 51, 1, 34, 32,...(this.perButtonDebounce||this.implementationRevision?[this.variantId,this.variantId?VARIANTS.find(value=>value.id===this.variantId).mask:171,this.perButtonDebounce?(this.independentDebounce?2:1):0,this.perButtonDebounce?this.buttonCount:0]:[]),...(this.implementationRevision?[this.implementationRevision,this.implementationRevision===4?31:this.implementationRevision===3?15:7]:[])]; break;
         case 1: payload = [...prefix, args[0], ...this.slots[args[0] - 1]]; break;
         case 2: this.slots[args[0] - 1] = args.slice(1, 17);this.buttons[args[0]-1][0]=args.slice(7,15); payload = [...prefix, ...args]; break;
         case 3: {
@@ -59,27 +57,11 @@ export class DemoDevice {
         }
         case 10:
         case 11: {
-          if(![2,3,4,23,24].includes(this.implementationRevision)){status=0xa3;break;}
+          if(![2,25].includes(this.implementationRevision)){status=0xa3;break;}
           if(op===11)this.saveState=2;
           this.saveState=this.statusQueue.shift()??this.saveState;
           const age=new Uint8Array(4);new DataView(age.buffer).setUint32(0,this.invalidAges,true);
-          payload=[...prefix,this.saveState,this.phase,this.clockPaused,this.saveError,...age];break;
-        }
-        case 12: {
-          if(![3,4].includes(this.implementationRevision)||args.length!==1){status=0xa3;break;}
-          const bytes=new Uint8Array(48),view=new DataView(bytes.buffer);
-          this.phaseCounters.forEach((value,index)=>view.setUint32(index*4,value,true));
-          payload=[...prefix,this.phaseDiagnosticVersion,this.phaseReason,...bytes];break;
-        }
-        case 13: {
-          if(this.implementationRevision!==4||args.length!==0){status=0xa3;break;}
-          const bytes=new Uint8Array(42),v=new DataView(bytes.buffer),r=this.reference;
-          bytes.set([1,Number(r.captureValid),Number(r.packetPending),Number(r.txStampValid)]);
-          v.setUint16(6,r.period,true);v.setUint16(8,r.lead,true);v.setUint32(10,r.lastLocal,true);
-          bytes.set([r.lastTick,Number(r.valid),r.confidence,r.state],14);v.setInt32(18,r.pending,true);
-          ['accepted','rejected','expired'].forEach((key,i)=>v.setUint32(22+4*i,r[key],true));
-          v.setInt32(34,r.lastError,true);v.setUint32(38,r.timestampRejected,true);
-          payload=[...prefix,...bytes];break;
+          payload=[...prefix,this.saveState,0,this.clockPaused,this.saveError,...age];break;
         }
         default: status = 0xa3;
       }

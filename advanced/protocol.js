@@ -20,7 +20,7 @@ export function normalize(raw) {
   return bytes.slice(0, 6 + bytes[3]);
 }
 const echoLength = {1: 1, 2: 17, 3: 1, 4: 1, 6: 3, 7: 2, 8: 2, 9: 10};
-const replyMinimum = {0: 17, 1: 27, 2: 27, 3: 27, 4: 11, 5: 11, 6: 13, 7: 13, 8: 20, 9: 20, 10:18, 11:18, 12:60, 13:52};
+const replyMinimum = {0: 17, 1: 27, 2: 27, 3: 27, 4: 11, 5: 11, 6: 13, 7: 13, 8: 20, 9: 20, 10:18, 11:18};
 export function matches(reply, command, payload, group = 1) {
   if (reply.length < 6 || reply[4] !== group || reply[5] !== command || ![0xa1, 0xa2, 0xa3].includes(reply[0])) return false;
   if (command !== 0x7e) {
@@ -42,7 +42,7 @@ export class RequestTimeout extends Error {
   constructor() { super('设备响应超时。请保持鼠标唤醒，并关闭其他驱动页面后重新读取。'); this.name = 'RequestTimeout'; }
 }
 function readonly(command, data, group) {
-  if (group === 1 && command === 0x7e) return [0, 1, 3, 7, 8, 10, 12, 13].includes(data[3]) || (data[3] === 5 && data[4] === 2);
+  if (group === 1 && command === 0x7e) return [0, 1, 3, 7, 8, 10].includes(data[3]) || (data[3] === 5 && data[4] === 2);
   return LEGACY_READS.has(`${group}:${command}`) || (group === 0 && [0x81, 0x85].includes(command));
 }
 const LEGACY_READS = new Set(['1:128', '1:129', '1:139', '1:147', '1:136', '1:137', '1:132', '1:138', '0:152', '0:159']);
@@ -133,7 +133,7 @@ export const buttonMask=raw=>(raw[5]&128)?raw[5]&31:raw[4]?31:0;
 export function decodeProfile(raw) {
   if (raw.length !== 16) throw Error('配置长度必须为 16 字节');
   const view = new DataView(Uint8Array.from(raw).buffer);
-  return {fps: raw[0], lock: raw[1] !== 0, lead: view.getUint16(2, true), debounce: raw[4] !== 0,
+  return {fps: raw[0], debounce: raw[4] !== 0,
     pre: view.getUint16(6, true) / 10, post: view.getUint16(8, true) / 10,
     plock: view.getUint16(10, true) / 10, relock: view.getUint16(12, true) / 10,
     landingProtection:!(raw[14]&1)};
@@ -141,9 +141,8 @@ export function decodeProfile(raw) {
 export function encodeProfile(original, value, fpsCount = 34, features) {
   if (original.length !== 16) throw Error('请先读取鼠标配置');
   if (!Number.isInteger(value.fps) || value.fps < 0 || value.fps > fpsCount) throw Error('无效的 FPS 预设');
-  if (!Number.isInteger(value.lead) || value.lead < 0 || value.lead > 1000) throw Error('相位提前量范围为 0–1000 µs');
   const raw = Uint8Array.from(original), view = new DataView(raw.buffer);
-  raw[0] = value.fps; raw[1] = Number(value.lock); view.setUint16(2, value.lead, true); raw[4] = Number(value.debounce);
+  raw[0] = value.fps; raw.fill(0,1,4); raw[4] = Number(value.debounce);
   if(features?.independentDebounce){
     if(!Array.isArray(value.buttons)||value.buttons.length!==5||value.buttons.some(button=>typeof button.enabled!=='boolean'))throw Error('无效的按键开关');
     const mask=value.buttons.reduce((bits,button,key)=>bits|(Number(button.enabled)<<key),0);
@@ -167,14 +166,6 @@ export function validateLegacy(values, target = 2) {
   }
   if (target === 0 && RATES[values.polling] > 1000) throw Error('有线回报率最高为 1000 Hz，请连接无线接收器后设置');
 }
-export function phaseHint(value, rate) {
-  if (!value.lock) return '相位调节已关闭。';
-  if (![1000, 2000, 4000].includes(rate)) return '相位调节仅在无线 1000 / 2000 / 4000 Hz 路径生效。';
-  const lead = value.lead || 80, period = 1e6 / rate;
-  if (lead < 4 || lead >= period / 2) return `${lead} µs 超出当前回报率的运行范围，固件会跳过调节。`;
-  const residue = (period - lead) % 125 || 125;
-  return `${lead} µs · 周期 ${period} µs · ${residue < 32 ? '进入合并 tick 路径' : `余量 ${residue} µs`}。`;
-}
 export function registerAddress(page, reg) {
   if (!Number.isInteger(page) || page < 0 || page > 255 || !Number.isInteger(reg) || reg < 0 || reg >= 127) throw Error('页地址需为 00–FF，寄存器地址需为 00–7E');
   return `${hex(page)}:${hex(reg)}`;
@@ -196,8 +187,8 @@ export class LunaClient {
   }
   decodeStatus(r) {
     const view=new DataView(r.buffer,r.byteOffset,r.byteLength);
-    const result={save:r[10]&15,attempts:r[10]>>>4,phase:r[11],clockPaused:Boolean(r[12]),saveError:r[13],invalidAges:view.getUint32(14,true)};
-    if(result.save>3||result.attempts>3||result.phase>3||r[12]>1)throw Error('无效的固件状态响应');
+    const result={save:r[10]&15,attempts:r[10]>>>4,clockPaused:Boolean(r[12]),saveError:r[13],invalidAges:view.getUint32(14,true)};
+    if(result.save>3||result.attempts>3||r[11]!==0||r[12]>1)throw Error('无效的固件状态响应');
     return result;
   }
   async runtimeStatus() {

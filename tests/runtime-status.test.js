@@ -10,24 +10,24 @@ import {Vue} from './helpers/bundled-vue.js';
 const definitions=JSON.parse(readFileSync(new URL('../advanced/protocol-definitions.json',import.meta.url)));
 const client=(device)=>new LunaClient(new HidTransport(device,{interval:1,timeout:12}),definitions);
 
-test('revision 2 recognizes all six release capabilities and rejects unknown flags',async()=>{
+test('revision 2 recognizes both release capabilities and rejects unknown flags',async()=>{
   const device=new DemoDevice({implementationRevision:2});
   await device.sendFeatureReport(0,packet(126,[76,70,1,0]));
   const reply=normalize(await device.receiveFeatureReport(0));
   assert.equal(reply.length,23);
   for(const [i,variant] of VARIANTS.entries()){
-    const r=reply.slice();r[17]=i+1;r[18]=variant.mask;
-    if(i<3){r[19]=2;r[20]=5;}
+    const r=reply.slice();r[17]=variant.id;r[18]=variant.mask;
+    if(variant.id===2){r[19]=2;r[20]=5;}else{r[19]=0;r[20]=0;}
     const features=decodeFeatures(r);
     assert.equal(features.name,variant.name);assert.equal(features.runtimeStatus,true);
-    assert.equal(features.landingPolicy,i<3);assert.equal(Boolean(features.perButtonDebounce),i<3);
-    assert.equal(Boolean(features.independentDebounce),i<3);
+    assert.equal(features.landingPolicy,variant.id===2);assert.equal(Boolean(features.perButtonDebounce),variant.id===2);
+    assert.equal(Boolean(features.independentDebounce),variant.id===2);
     for(const offset of [21,22]){const bad=r.slice();bad[offset]^=128;assert.throws(()=>decodeFeatures(bad));}
   }
 });
 
 test('landing protection changes only negotiated profile bytes and preserves legacy reserved bytes',()=>{
-  const old=Uint8Array.from([7,1,80,0,1,0,0,0,15,0,0,0,100,0,0xcd,0xef]);
+  const old=Uint8Array.from([7,0,0,0,1,0,0,0,15,0,0,0,100,0,0xcd,0xef]);
   const draft={...decodeProfile(old),landingProtection:true};
   assert.deepEqual(encodeProfile(old,draft).slice(14),old.slice(14));
   const encoded=encodeProfile(old,draft,34,{landingPolicy:true});
@@ -85,11 +85,11 @@ test('shared and independent editors preserve other switches and confirm flash b
   for(const independent of [false,true]){
     const{vm,device}=await editor(independent);
     try{
-      const other={phase:vm.draft.lock,tracking:vm.legacy.tracking,hyper:vm.legacy.hyper};
+      const other={tracking:vm.legacy.tracking,hyper:vm.legacy.hyper};
       vm.selectedButton=1;vm.debounceDraft.post=2.3;
       if(independent)vm.debounceDraft.enabled=false;else vm.draft.debounce=false;
       vm.draft.landingProtection=false;await Vue.nextTick();assert.equal(vm.dirty,true);
-      assert.deepEqual({phase:vm.draft.lock,tracking:vm.legacy.tracking,hyper:vm.legacy.hyper},other);
+      assert.deepEqual({tracking:vm.legacy.tracking,hyper:vm.legacy.hyper},other);
       const draft=vm.collectDraft();device.saveState=0x33;
       await assert.rejects(vm.applySettings(draft,structuredClone(vm.base)),/保存失败/);
       assert.equal(vm.runtime.save,3);assert.ok(!vm.message.includes('设置已保存'));
@@ -97,8 +97,6 @@ test('shared and independent editors preserve other switches and confirm flash b
       assert.equal(vm.draft.landingProtection,false);assert.equal(vm.draft.buttons[1].post,2.3);
       if(independent)assert.equal(vm.draft.buttons[1].enabled,false);else assert.equal(vm.draft.debounce,false);
       if(!independent){const bottom={...vm.base.buttons[5]};vm.loadPreset();assert.deepEqual(vm.draft.buttons[5],bottom);}
-      vm.legacy.polling=128;vm.draft.lead=0;assert.equal(vm.phaseLead,80);
-      vm.legacy.polling=64;assert.equal(vm.phaseLead,80);
     }finally{await vm.disconnect();vm.$destroy();}
   }
 });

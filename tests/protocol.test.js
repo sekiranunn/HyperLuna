@@ -5,33 +5,31 @@ import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {packet, normalize, matches, HidTransport, LunaClient, RequestTimeout,
-  decodeProfile, encodeProfile, equal, validateLegacy, phaseHint, registerAddress} from '../advanced/protocol.js';
+  decodeProfile, encodeProfile, equal, validateLegacy, registerAddress} from '../advanced/protocol.js';
 import {DemoDevice} from '../advanced/demo.js';
 import {createOptions} from '../native/research.js';
-import {decodeFeatures, validateFeatures, FULL_FEATURES, VARIANTS} from '../advanced/features.js';
+import {decodeFeatures, validateFeatures, DEFAULT_FEATURES, VARIANTS} from '../advanced/features.js';
 
 const definitions = JSON.parse(readFileSync(new URL('../advanced/protocol-definitions.json', import.meta.url)));
 const canonicalPath = new URL('../../lunafury-analysis/port/protocol-definitions.json', import.meta.url);
-test('capability replies distinguish the six variants and preserve the existing full port', () => {
-  assert.equal(decodeFeatures(new Uint8Array(17)), FULL_FEATURES);
-  for(const [index,variant] of VARIANTS.entries()){
-    const reply=new Uint8Array(19);reply[17]=index+1;reply[18]=variant.mask;
+test('capability replies retain stable IDs for the two non-phase variants', () => {
+  assert.throws(()=>decodeFeatures(new Uint8Array(17)));
+  for(const variant of VARIANTS){
+    const reply=new Uint8Array(19);reply[17]=variant.id;reply[18]=variant.mask;
     assert.equal(decodeFeatures(reply).name,variant.name);
     reply[18]^=1;assert.throws(()=>decodeFeatures(reply));
   }
-  const value={fps:7,lock:true,lead:80,debounce:true,pre:0,post:1.5,plock:0,relock:10};
+  const value={fps:7,debounce:true,pre:0,post:1.5,plock:0,relock:10};
   assert.doesNotThrow(()=>validateFeatures(value,VARIANTS[0]));
   assert.throws(()=>validateFeatures(value,VARIANTS[1]));
-  assert.throws(()=>validateFeatures({...value,fps:1},VARIANTS[2]));
-  assert.doesNotThrow(()=>validateFeatures({...value,fps:1,post:2},VARIANTS[2]));
-  assert.throws(()=>validateFeatures(value,VARIANTS[5]));
 });
+
 test('unsupported feature mutations are rejected before sending to a variant', async () => {
   const records=[],t=new HidTransport(new DemoDevice(),{interval:1,log:r=>records.push(r)}),c=new LunaClient(t,definitions);
-  c.features=VARIANTS[5];
+  c.features=VARIANTS[1];
   await assert.rejects(c.telemetry(1));assert.equal(await c.telemetry(),false);
   await assert.rejects(c.statistics());
-  await assert.rejects(c.putProfile(1,encodeProfile(new Uint8Array(16),{fps:7,lock:false,lead:0,debounce:false,pre:0,post:0,plock:0,relock:0})));
+  await assert.rejects(c.putProfile(1,encodeProfile(new Uint8Array(16),{fps:7,debounce:false,pre:0,post:0,plock:0,relock:0})));
   assert.equal(records.length,0);await t.close();
 });
 test('protocol definitions exactly match firmware preset indexes and counter order', {skip: !existsSync(canonicalPath)}, () => assert.deepEqual(definitions, JSON.parse(readFileSync(canonicalPath))));
@@ -74,28 +72,19 @@ test('editing preserves reserved bytes, supports 0.1 ms and rejects invalid inpu
   const value = {...decodeProfile(raw), post: 2.3}; const out = encodeProfile(raw, value);
   assert.equal(out[5], 0xab); assert.equal(out[14], 0xcd); assert.equal(out[15], 0xef); assert.equal(decodeProfile(out).post, 2.3);
   for (const post of [NaN, Infinity, -1, 101, .15]) assert.throws(() => encodeProfile(raw, {...value, post}));
-  for (const lead of [-1, 1001, 4.5]) assert.throws(() => encodeProfile(raw, {...value, lead}));
   assert.throws(() => encodeProfile(raw, {...value, fps: 35})); assert.equal(raw[8], 15);
   assert.throws(() => registerAddress(0, 127)); assert.throws(() => registerAddress(-1, 0));
-  assert.match(phaseHint({lock: true, lead: 80}, 4000), /45/);
-  assert.match(phaseHint({lock: true, lead: 96}, 4000), /合并/);
-  assert.match(phaseHint({lock: true, lead: 0}, 1000), /80 µs/);
-  assert.match(phaseHint({lock: true, lead: 125}, 2000), /余量 125/);
-  assert.doesNotMatch(phaseHint({lock: true, lead: 249}, 2000), /跳过/);
-  assert.match(phaseHint({lock: true, lead: 250}, 2000), /跳过/);
-  assert.match(phaseHint({lock: true, lead: 100}, 8000), /仅在无线 1000/);
 });
-test('native input text is normalized before validation and cannot silently keep the previous number', () => {
-  const device = new DemoDevice(), raw = device.slots[0], methods = createOptions(definitions, {}).methods;
-  const context = {draft: {...decodeProfile(raw), lead: '84', pre: '0.0', post: '1.5', plock: '0', relock: '10'},
-    base: {raw, legacy: device.legacy[0]}, legacy: device.legacy[0], transportTarget: 2};
-  const result = methods.collectDraft.call(context);
-  assert.equal(result.patch.lead, 84); assert.equal(decodeProfile(result.raw).lead, 84);
-  assert.equal(result.patch.post, 1.5);
-  context.draft.lead = ''; assert.throws(() => methods.collectDraft.call(context));
-  context.draft.lead = '84.5'; assert.throws(() => methods.collectDraft.call(context));
-  context.draft.lead = '80'; context.draft.post = 'invalid'; assert.throws(() => methods.collectDraft.call(context));
+test('native input text validates timing fields and reserves the removed wire bytes', () => {
+  const device=new DemoDevice(),raw=device.slots[0],methods=createOptions(definitions,{}).methods;
+  const context={draft:{...decodeProfile(raw),pre:'0.0',post:'1.5',plock:'0',relock:'10'},
+    base:{raw,legacy:device.legacy[0]},legacy:device.legacy[0],transportTarget:2};
+  const result=methods.collectDraft.call(context);
+  assert.equal(result.patch.post,1.5);assert.deepEqual([...result.raw.slice(1,4)],[0,0,0]);
+  context.draft.post='';assert.throws(()=>methods.collectDraft.call(context));
+  context.draft.post='invalid';assert.throws(()=>methods.collectDraft.call(context));
 });
+
 test('concurrent requests serialize complete send/poll transactions', async () => {
   const d = new DemoDevice(), calls = [], original = d.sendFeatureReport.bind(d);
   d.sendFeatureReport = async (id, p) => { calls.push(`send-${p[10]}`); await original(id, p); };
@@ -156,8 +145,8 @@ test('preview reads, writes, telemetry and register undo target only its in-memo
   const state = await c.read(1); assert.equal(state.legacy.scan_rate, 64); assert.equal(state.legacy.scan_sequence, 0);
   await c.putLegacy(1, 'scan_rate', 32); assert.equal((await c.read(1)).legacy.polling, 64);
   assert.equal(await c.peek(24, 122), 138); await c.poke(24, 122, 139); assert.equal(await c.peek(24, 122), 139);
-  assert.equal(await c.telemetry(), false); assert.equal(await c.telemetry(1), true); assert.equal(await c.telemetry(), true);
-  assert.equal(Object.keys(await c.statistics()).length, 32); await t.close();
+  assert.equal(await c.telemetry(), false); await assert.rejects(c.telemetry(1)); assert.equal(await c.telemetry(), false);
+  await assert.rejects(c.statistics()); await t.close();
 });
 test('JavaScript LF33 client executes extension protocol on the actual patched ARM model', {timeout: 60000, skip: !existsSync(new URL('../../.hyperdrako-analysis-venv/Scripts/python.exe', import.meta.url)) || !existsSync(canonicalPath)}, async () => {
   const python = fileURLToPath(new URL('../../.hyperdrako-analysis-venv/Scripts/python.exe', import.meta.url));
@@ -177,11 +166,11 @@ test('JavaScript LF33 client executes extension protocol on the actual patched A
   }};
   try {
     const client = new LunaClient(transport, definitions); assert.equal((await client.info()).counterCount, 32);
-    const raw = await client.getProfile(1), requested = encodeProfile(raw, {fps: 7, lock: true, lead: 80, debounce: true, pre: 0, post: 1.5, plock: 0, relock: 10});
+    const raw = await client.getProfile(1), requested = encodeProfile(raw, {fps: 7, debounce: true, pre: 0, post: 1.5, plock: 0, relock: 10});
     await client.putProfile(1, requested); assert.deepEqual(decodeProfile(await client.getProfile(1)), decodeProfile(requested));
     for (let slot = 2; slot <= 4; slot++) assert.equal((await client.getProfile(slot)).length, 16);
-    assert.equal(await client.telemetry(), false); await client.telemetry(1); assert.equal(await client.telemetry(), true);
-    assert.equal(Object.keys(await client.statistics()).length, 32);
+    assert.equal(await client.telemetry(), false); await assert.rejects(client.telemetry(1));
+    await assert.rejects(client.statistics());
     const old = await client.peek(24, 122); await client.poke(24, 122, 138); assert.equal(await client.peek(24, 122), 138); await client.poke(24, 122, old);
   } finally { child.stdin.end(); lines.close(); child.kill(); }
 });

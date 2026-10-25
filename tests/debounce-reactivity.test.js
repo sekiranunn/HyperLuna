@@ -19,7 +19,7 @@ async function editor(){
 }
 
 async function toggleEveryButton(vm){
-  const other={phase:vm.draft.lock,hyper:vm.legacy.hyper,tracking:vm.legacy.tracking};
+  const other={hyper:vm.legacy.hyper,tracking:vm.legacy.tracking};
   for(const {id} of BUTTONS){
     vm.selectedButton=id;await Vue.nextTick();
     let updates=0;const stop=vm.$watch(()=>vm.debounceDraft.enabled,()=>updates++);
@@ -29,7 +29,7 @@ async function toggleEveryButton(vm){
       await Vue.nextTick();
       assert.equal(updates,click+1,`button ${id}: every toggle must notify the rendered switch`);
       for(let key=0;key<5;key++)assert.equal(vm.draft.buttons[key].enabled,key===id?((click%2)?before[key]:!before[key]):before[key]);
-      assert.deepEqual({phase:vm.draft.lock,hyper:vm.legacy.hyper,tracking:vm.legacy.tracking},other);
+      assert.deepEqual({hyper:vm.legacy.hyper,tracking:vm.legacy.tracking},other);
       assert.equal(vm.dirty,click%2===0,'the Apply button must update without toggling another control');
     }
     stop();
@@ -53,7 +53,7 @@ test('preset and save/readback preserve reactive per-button flags and timing fie
   const {vm,device}=await editor();
   try{
     vm.loadPreset();
-    assert.equal(vm.draft.lead,0,'the preset uses rate-aware automatic phase lead');
+    assert.equal('lead' in vm.draft,false);assert.equal('lock' in vm.draft,false);
     const baseline=vm.collectDraft();await vm.applySettings(baseline,structuredClone(vm.base));
     await toggleEveryButton(vm);
     vm.selectedButton=1;await Vue.nextTick();

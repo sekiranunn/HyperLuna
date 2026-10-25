@@ -1,13 +1,13 @@
 import {HidTransport, LunaClient, VID, PIDS, LEGACY, RATES, BUTTONS, TIMING_KEYS, hex, equal, equalButtons, decodeProfile, encodeProfile, decodeTimings, encodeTimings, validateLegacy, registerAddress} from '../advanced/protocol.js';
 import {WATCH} from '../advanced/demo.js';
-import {FULL_FEATURES, validateFeatures} from '../advanced/features.js';
+import {DEFAULT_FEATURES, validateFeatures} from '../advanced/features.js';
 import {assetUrl} from '../runtime.js';
 import {FIRMWARE_NOTICE, isLuna33, requireLuna33} from '../device-access.js';
 import {lodLabel, lodHeightOptions} from '../advanced/lod.js';
 import {translate, savedLanguage, normalizeLanguage, applyDocumentLanguage} from '../i18n.js';
-const stockFeatures = {name:'官方固件',fps:'none',phase:'none',debounce:'none',stats:false};
-const patchNames = {fps:'FPS 预设',lock:'相位调节',lead:'相位提前量',debounce:'自定义消抖',landingProtection:'抬鼠复位防误触',pre:'按下前滤波',post:'按下后滤波',plock:'按下锁定',relock:'松开锁定'};
-const blank = () => ({fps:null,lock:false,lead:undefined,debounce:false,landingProtection:true,pre:undefined,post:undefined,plock:undefined,relock:undefined});
+const stockFeatures = {name:'官方固件',fps:'none',debounce:'none',stats:false};
+const patchNames = {fps:'FPS 预设',debounce:'自定义消抖',landingProtection:'抬鼠复位防误触',pre:'按下前滤波',post:'按下后滤波',plock:'按下锁定',relock:'松开锁定'};
+const blank = () => ({fps:null,debounce:false,landingProtection:true,pre:undefined,post:undefined,plock:undefined,relock:undefined});
 function fpsLabel(preset) {
   if (!preset) return '';
   const [name,unit,longest,shortest] = preset;
@@ -36,7 +36,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
   return {
     data() { return {definitions,language:savedLanguage(),headerUpdater:new window.XviUpdater(),themeMode:'1',tab:'settings',connected:false,demo:false,busy:false,deviceName:'',currentFirmware:'',transportTarget:2,slot:1,
       riskVisible:true,riskAcknowledged:false,firmwareNotice:FIRMWARE_NOTICE,deviceVerified:false,
-      base:{raw:[],legacy:{},active:1,slot:1},draft:blank(),legacy:{},message:'',hasError:false,telemetry:false,activity:[],counterRows:[],features:FULL_FEATURES,buttons:BUTTONS,selectedButton:0,runtime:null,runtimeReadAt:0,
+      base:{raw:[],legacy:{},active:1,slot:1},draft:blank(),legacy:{},message:'',hasError:false,telemetry:false,activity:[],counterRows:[],features:DEFAULT_FEATURES,buttons:BUTTONS,selectedButton:0,runtime:null,runtimeReadAt:0,
       registerRows:WATCH.map(([page,reg,label])=>({key:registerAddress(page,reg),page,reg,label,value:null,baseline:null,input:'',undo:null})),pageHex:'18',addressHex:'7A',
       rates:[[8,125],[4,250],[2,500],[1,1000],[16,1000],[32,2000],[64,4000],[128,8000]].map(([value,label])=>({value,label:`${label} Hz`})),
       debounceFields:[{key:'pre',label:'按下前滤波'},{key:'post',label:'按下后滤波'},{key:'plock',label:'按下锁定'},{key:'relock',label:'松开锁定'}],
@@ -47,7 +47,6 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       fpsOptions(){return this.features.fps==='presets'?definitions.fps_presets.map((p,i)=>({value:i+1,label:fpsLabel(p)})):[{value:1,label:fpsLabel(definitions.fps_presets[0])}];},
       lodOptions(){return lodHeightOptions(this.base.legacy.lod);},
       debounceDraft(){return this.draft.buttons?.[this.selectedButton]||{};},
-      phaseLead(){return Number(this.draft.lead)||80;},
       dirty() { if (!this.connected) return false; try { return this.changeRows(this.collectDraft()).length > 0; } catch { return true; } },
     },
     async mounted() {
@@ -84,11 +83,11 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
           Object.assign(patch,patch.buttons[0]);
           if(this.features.independentDebounce)patch.debounce=patch.buttons.some(button=>button.enabled);
         }
-        for(const key of ['fps','lead',...TIMING_KEYS]){if(patch[key]===undefined||patch[key]===null||String(patch[key]).trim()==='')throw Error('请填写完整参数');patch[key]=Number(patch[key]);}
+        for(const key of ['fps',...TIMING_KEYS]){if(patch[key]===undefined||patch[key]===null||String(patch[key]).trim()==='')throw Error('请填写完整参数');patch[key]=Number(patch[key]);}
         const raw=encodeProfile(this.base.raw,patch,definitions.fps_presets.length,this.features),legacy={...this.legacy};
         validateLegacy(legacy,this.transportTarget);validateFeatures(patch,this.features);return{raw,legacy,patch};
       },
-      patchText(key,value){ if(key==='fps')return value?fpsLabel(definitions.fps_presets[value-1])||String(value):'原厂脚本';if(['lock','debounce','landingProtection'].includes(key))return value?'开启':'关闭';return `${value}${key==='lead'?' µs':' ms'}`; },
+      patchText(key,value){ if(key==='fps')return value?fpsLabel(definitions.fps_presets[value-1])||String(value):'原厂脚本';if(['debounce','landingProtection'].includes(key))return value?'开启':'关闭';return `${value} ms`; },
       legacyText(key,value){ if(key==='lod')return lodLabel(value);if(key==='polling'||key==='scan_rate')return this.rate(value);if(key==='scan_sequence')return ['关闭','左键优先','右键优先'][value];return value?'开启':'关闭'; },
       changeRows(draft){
         const out=[],old=decodeProfile(this.base.raw);
@@ -131,7 +130,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
         },true);
       },
       async disconnect(){
-        const closing=transport;transport=null;client=null;admittedDevice=null;this.deviceVerified=false;this.connected=false;this.demo=false;this.currentFirmware='';this.features=FULL_FEATURES;this.draft=blank();this.legacy={};this.setRuntime(null);this.base={raw:[],legacy:{},active:1,slot:1};this.reviewVisible=false;pending=null;
+        const closing=transport;transport=null;client=null;admittedDevice=null;this.deviceVerified=false;this.connected=false;this.demo=false;this.currentFirmware='';this.features=DEFAULT_FEATURES;this.draft=blank();this.legacy={};this.setRuntime(null);this.base={raw:[],legacy:{},active:1,slot:1};this.reviewVisible=false;pending=null;
         if(closing)await closing.close();release?.();release=null;this.notify('设备已断开。');
       },
       async deviceRemoved(event){if(transport?.device===event.device){await this.disconnect();this.fail(Error('设备已拔出，请重新连接'));}},
@@ -141,7 +140,7 @@ export function createOptions(definitions, {acquireDeviceLock, addHeaderEntry}) 
       loadPreset(){
         if(!this.connected||this.busy)return;
         if(this.transportTarget===0){this.fail(Error('4k 预设需要通过无线接收器连接'));return;}
-        const features=this.features,draft={fps:features.fps==='presets'?7:features.fps==='hyperfps'?1:0,lock:features.phase!=='none',lead:0,landingProtection:true,debounce:features.debounce!=='none',pre:0,post:features.debounce==='fine'?1.5:features.debounce==='ms'?2:0,plock:0,relock:features.debounce==='none'?0:10};
+        const features=this.features,draft={fps:features.fps==='presets'?7:features.fps==='hyperfps'?1:0,landingProtection:true,debounce:features.debounce!=='none',pre:0,post:features.debounce==='fine'?1.5:features.debounce==='ms'?2:0,plock:0,relock:features.debounce==='none'?0:10};
         if(features.perButtonDebounce)draft.buttons=Array.from({length:features.buttonCount},()=>({...Object.fromEntries(TIMING_KEYS.map(key=>[key,draft[key]])),...(features.independentDebounce?{enabled:true}:{})}));
         if(features.buttonCount===6)draft.buttons[5]={...this.base.buttons[5]};
         this.draft=draft;

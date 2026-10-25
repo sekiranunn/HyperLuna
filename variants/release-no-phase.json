@@ -1,0 +1,63 @@
+{
+  "release": "no-phase",
+  "implementation_revision": 25,
+  "phase_removed": true,
+  "verification_sha256": "2d4bd2a846e749cada4925da5920926725d7a9e77da3264d42d17d73391fcce2",
+  "source_sha256": {
+    "lunafury-analysis/port/no_phase_patch.py": "7892e6978e1cac00442fc9a12e6450b21e9708422643f8a58b3613e06880cd2c",
+    "lunafury-analysis/port/check_no_phase.py": "bff5048eb1b1a981980fbb95e942e06f653e5f8bcac7914c09f84ae254d3f7c5",
+    "lunafury-analysis/port/full_patch.py": "406f53b7bc4175eb5e8a035f0e61ce193e093b8417c6d1b8c63e11df5f5b4c69",
+    "lunafury-analysis/port/fw.py": "26940754a4f8e67af3b02c36d9e80432187394dc6807a656961a49d1f65ad875",
+    "lunafury-analysis/port/asm.py": "9c5cf9f420d8797a5bf5aedf70199b81dab6a27e31f841103d4525b60f914b0c",
+    "analysis-artifacts/before-remove-phase-lock-20261025/ABLODDB.bin": "9eb7713bc817e61cebffdd61e53bc3c986959569d66a5baee3538a7605501bbf",
+    "analysis-artifacts/before-remove-phase-lock-20261025/ABLODDB.map.json": "535ce4765c1c238f181618d5b009d8d70373253db7d0499d03d9a4686907c512",
+    "analysis-artifacts/before-remove-phase-lock-20261025/ABLOD.bin": "08a5fb3ce94d7ef91931af6eab77d97b766134c0378a710b80573e4a662dc064",
+    "analysis-artifacts/before-remove-phase-lock-20261025/ABLOD.map.json": "ec63ae5fd7446b2e145b5d1f159e78ce98e52da8b78e85cc53fb1bdd13e7ebe6"
+  },
+  "images": [
+    {
+      "id": "ABLODDB",
+      "name": "ABLODDB",
+      "file": "ABLODDB.bin",
+      "sha256": "0de4a81cf3facdb99bf292e80053980d523c35e4ef531a89c34523d900b1de6f",
+      "bytes": 99008,
+      "recommended": true,
+      "features": {
+        "phase": "none",
+        "debounce": "fine",
+        "fps": "presets",
+        "stats": false,
+        "per_button_debounce": true,
+        "independent_debounce": true
+      },
+      "variant_id": 2,
+      "capabilities": 41,
+      "hardware_tested": false,
+      "implementation_revision": 25,
+      "config_storage_version": 4,
+      "phase_removed": true,
+      "debounce_schema": 2,
+      "button_count": 5
+    },
+    {
+      "id": "ABLOD",
+      "name": "ABLOD",
+      "file": "ABLOD.bin",
+      "sha256": "1cd18b05be37eb47b49ad75015fd508c70e225d9b404659a17a2ddd9cac8adcd",
+      "bytes": 99008,
+      "recommended": false,
+      "features": {
+        "phase": "none",
+        "debounce": "none",
+        "fps": "none",
+        "stats": false
+      },
+      "variant_id": 6,
+      "capabilities": 1,
+      "hardware_tested": false,
+      "implementation_revision": 25,
+      "config_storage_version": 1,
+      "phase_removed": true
+    }
+  ]
+}

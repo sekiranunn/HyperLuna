@@ -67,7 +67,7 @@ test('risk confirmation is required for every new page instance, and UI state ca
 test('verified LUNA33 unlocks patched controls using reads only and removal closes the page',async()=>{
   const {context}=view(),device=lunaDevice();context.acceptRisk();await context.attach(device);
   assert.equal(context.hasAccess,true);assert.equal(context.connected,true);assert.equal(context.currentFirmware,'0.0.26.0');
-  assert.ok(device.sent.every(packet=>packet[5]>=0x80||(packet[5]===0x7e&&[0,1,3,7].includes(packet[9]))||(packet[5]===0x7e&&packet[9]===5&&packet[10]===2)));
+  assert.ok(device.sent.every(packet=>packet[5]>=0x80||(packet[5]===0x7e&&[0,1,3,7,8,10].includes(packet[9]))||(packet[5]===0x7e&&packet[9]===5&&packet[10]===2)));
   await context.disconnect();assert.equal(context.hasAccess,false);assert.equal(context.reviewVisible,false);
   await assert.rejects(context.applySettings({},{}),/连接 LUNAFURY/);
 });
@@ -98,8 +98,8 @@ test('old firmware URLs cannot restore a session or cause firmware, storage, or 
     for(const method of ['browserFlasher','startFirmware','recoverFirmware','downloadFirmware','downloadBackup','openLocalFlasher'])assert.equal(context[method],undefined);
     const device=lunaDevice();context.acceptRisk();await context.attach(device);
     await context.readRegisters();await context.readStatistics();
-    assert.ok(context.registerRows.every(row=>row.value!==null));assert.ok(context.counterRows.length>0);
-    assert.ok(device.sent.every(packet=>packet[5]>=0x80||(packet[5]===0x7e&&[0,1,3,7].includes(packet[9]))||(packet[5]===0x7e&&packet[9]===5&&packet[10]===2)));
+    assert.ok(context.registerRows.every(row=>row.value!==null));assert.equal(context.features.stats,false);assert.equal(context.counterRows.length,0);
+    assert.ok(device.sent.every(packet=>packet[5]>=0x80||(packet[5]===0x7e&&[0,1,3,7,8,10].includes(packet[9]))||(packet[5]===0x7e&&packet[9]===5&&packet[10]===2)));
     await context.disconnect();
   }finally{
     globalThis.fetch=originalFetch;
@@ -136,30 +136,18 @@ test('Pages artifact keeps verified firmware files while excluding updater code 
   const deployment=JSON.parse(readFileSync(new URL('deployment.json',dist)));
   assert.equal(deployment.mode,'pages');assert.equal(deployment.firmwareUpdates,'archived');
   const catalogue=JSON.parse(readFileSync(new URL('firmware/catalogue.json',dist)));
-  const ids=['ABLODLOCKDB','ABLODDB','ABLODSTATSDB','ABLODSTATS','ABLODLOCK','ABLOD','stock'];
+  const ids=['ABLODDB','ABLOD','stock'];
   assert.deepEqual(catalogue.images.map(image=>image.id),ids);
   assert.deepEqual(files.filter(path=>path.endsWith('.bin')).map(path=>path.replaceAll('\\','/')).sort(),ids.map(id=>'firmware/'+id+'.bin').sort());
   assert.deepEqual(readdirSync(new URL('firmware/',root)).sort(),ids.map(id=>id+'.bin').sort());
-  const perButtonHashes={
-    ABLODLOCKDB:'e7568a6c78f87f56bd0c92991de1351e454b7881d2bd1b08fedde830f8e2a6d9',
-    ABLODDB:'9eb7713bc817e61cebffdd61e53bc3c986959569d66a5baee3538a7605501bbf',
-    ABLODSTATSDB:'2693cb0f0e3eadd7fe2a7b26db4fb48509f9c5a42f43ed6679cd690cfb63888e'
-  };
+  const perButtonHashes={ABLODDB:'0de4a81cf3facdb99bf292e80053980d523c35e4ef531a89c34523d900b1de6f'};
   for(const [id,sha] of Object.entries(perButtonHashes)){
     const image=catalogue.images.find(image=>image.id===id);
     assert.equal(image.name,id);assert.equal(image.file,id+'.bin');assert.equal(image.sha256,sha);
     assert.equal(image.debounce_schema,2);assert.equal(image.button_count,5);assert.equal(image.features.per_button_debounce,true);assert.equal(image.features.independent_debounce,true);assert.equal(image.config_storage_version,4);
   }
   for(const image of catalogue.images){
-    if(image.id!=='stock'){assert.equal(image.implementation_revision,['ABLODLOCKDB','ABLODSTATSDB','ABLODSTATS','ABLODLOCK'].includes(image.id)?24:2);assert.equal(image.hardware_tested,false);}
-    if(['ABLODLOCKDB','ABLODSTATSDB','ABLODSTATS','ABLODLOCK'].includes(image.id)){
-      assert.equal(image.phase_basis,'motion-frame');assert.deepEqual(image.phase_rates_hz,[1000,2000,4000]);
-      assert.equal(image.phase_default_lead_us,80);assert.equal(image.ack_clock_recovery,true);
-      assert.equal(image.phase_diagnostics,0);assert.equal(image.phase_diagnostic_counters,0);
-      assert.equal(image.phase_deferred,false);assert.equal(image.phase_guard_us,undefined);
-      assert.equal(image.phase_timer,'TIMER1.CC2');assert.equal(image.phase_scheduler,'absolute-read-deadline');
-      assert.equal(image.phase_shared_counter,true);assert.equal(image.base_tick_us,125);
-    }
+    if(image.id!=='stock'){assert.equal(image.implementation_revision,25);assert.equal(image.hardware_tested,false);assert.equal(image.features.phase,'none');assert.equal(image.capabilities&(2|4|128),0);}
     const bytes=readFileSync(new URL('firmware/'+image.file,dist));
     assert.equal(bytes.length,99008);assert.equal(createHash('sha256').update(bytes).digest('hex'),image.sha256);
     assert.deepEqual(bytes,readFileSync(new URL('firmware/'+image.file,root)));

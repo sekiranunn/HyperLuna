@@ -11,7 +11,7 @@ const load = path => new Promise((resolve,reject)=>{
 await load('js/output.xvi3.min.js');await load('js/chunk-vendors.3562a7a5.js');await load('native/vendor-ui.js');
 const definitions=await fetch(assetUrl('advanced/protocol-definitions.json')).then(response=>response.json());
 const options=createOptions(definitions,{addHeaderEntry,acquireDeviceLock:async()=>()=>{}});
-const simulated=new DemoDevice({independentDebounce:!params.has('shared'),implementationRevision:24,variantId:1});
+const simulated=new DemoDevice({independentDebounce:!params.has('shared'),implementationRevision:25,variantId:2});
 simulated.collections=[{usagePage:0xffff,featureReports:[{reportId:0,items:[{reportCount:64,reportSize:8}]}]}];
 new window.LunaNative.Vue({...options,render,staticRenderFns,components:{HeaderMain:window.LunaNative.Header},
   data(){const state=options.data();return {...state,riskVisible:false,
@@ -20,7 +20,7 @@ new window.LunaNative.Vue({...options,render,staticRenderFns,components:{HeaderM
   };},
   async mounted(){
     this.languageChanged(params.get('lang')||this.language);this.acceptRisk();await this.connect();
-    this.$watch(()=>JSON.stringify({selected:this.selectedButton,buttons:this.draft.buttons,phase:this.draft.lock,hyper:this.legacy.hyper,tracking:this.legacy.tracking,dirty:this.dirty,saved:[...simulated.slots[0]]}),value=>{document.getElementById('fixture-state').textContent=value;},{immediate:true});
+    this.$watch(()=>JSON.stringify({selected:this.selectedButton,buttons:this.draft.buttons,hyper:this.legacy.hyper,tracking:this.legacy.tracking,dirty:this.dirty,saved:[...simulated.slots[0]]}),value=>{document.getElementById('fixture-state').textContent=value;},{immediate:true});
   },beforeDestroy(){},methods:{...options.methods,
     async connect(){
       if(this.deviceVerified){await this.disconnect();return;}

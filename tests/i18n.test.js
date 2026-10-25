@@ -67,7 +67,7 @@ test('live language changes translate existing feedback and previews without tou
     for(const [key,method] of Object.entries(options.methods))context[key]=method.bind(context);
     const simulated=new DemoDevice();
     context.connected=true;context.setBase({raw:[...simulated.slots[0]],legacy:{...simulated.legacy[0],lod:0x85},slot:1,active:1});
-    context.draft.lead=84;
+    context.draft.fps=8;
     const before=context.collectDraft(),rows=context.changeRows(before);
     context.message='已读取 16 项寄存器';context.reviewTitle='应用到配置 1';context.reviewRows=rows;
     for(const [language,htmlLang] of [['EN','en'],['JPN','ja'],['ZH','zh-CN']]){

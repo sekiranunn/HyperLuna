@@ -40,7 +40,7 @@ for (const asset of upstream.files) {
   emit(path,bytes);
 }
 const catalogue = publicCatalogue(JSON.parse(readFileSync(resolve(root,'variants/catalogue.json'),'utf8')));
-if (catalogue.images.map(image=>image.id).join(',') !== 'ABLODLOCKDB,ABLODDB,ABLODSTATSDB,ABLODSTATS,ABLODLOCK,ABLOD') throw Error('Unexpected firmware catalogue');
+if (catalogue.images.map(image=>image.id).join(',') !== 'ABLODDB,ABLOD') throw Error('Unexpected firmware catalogue');
 catalogue.images.push(stockImage);
 for (const image of catalogue.images) {
   if (!/^[A-Za-z0-9_-]+\.bin$/.test(image.file)) throw Error('Invalid firmware path');

@@ -8,7 +8,7 @@ import {createOptions} from '../native/research.js';
 const definitions=JSON.parse(readFileSync(new URL('../advanced/protocol-definitions.json',import.meta.url)));
 function view() {
   globalThis.window={XviUpdater:class {}};
-  const options=createOptions(definitions,{});
+  const options=createOptions(definitions,{deployment:{mode:'pages'}});
   const context={...options.data(),$message:{error(){},warning(){}}};
   for(const [key,method] of Object.entries(options.methods))context[key]=method.bind(context);
   for(const [key,get] of Object.entries(options.computed))Object.defineProperty(context,key,{get:get.bind(context)});
@@ -44,7 +44,6 @@ test('reading every saved LOD code preserves its exact byte, including aliases a
     assert.ok(context.lodOptions.some(option=>option.value===code));
     assert.equal(context.collectDraft().legacy.lod,code);
     assert.equal(context.dirty,false);
-    context.draft.lead=84;
     assert.ok(!context.changeRows(context.collectDraft()).some(row=>row.name==='LOD 高度'));
   }
   assert.equal(lodHeight(0x59),null);assert.equal(lodLabel(0x59),'当前高度未知（0x59）');
