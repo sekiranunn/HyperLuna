@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "targets": [
+    {"id":"ABLODDB","builder":"five_button","recommended":true,"features":{"phase":"none","debounce":"fine","fps":"presets","stats":false}},
+    {"id":"ABLOD","builder":"core","features":{"phase":"none","debounce":"none","fps":"none","stats":false}}
+  ]
+}

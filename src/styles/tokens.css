@@ -1,0 +1,67 @@
+:root,
+:root[data-theme="light"] {
+  --fontFamily: "Helvetica Neue", "MiSans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  --font-brand: "Eurostile", "Helvetica Neue", "MiSans VF", sans-serif;
+
+  /* Swiss Offset Print (Warm Archival Cotton Paper) */
+  --paper: #f6f5f0;
+  --paper-tint: #efeee8;
+  --paper-elev: #faf9f5;
+  --paper-overlay: rgba(23, 23, 23, 0.42);
+
+  --ink: #171717;
+  --ink-2: #4a4a47;
+  --ink-3: #82827c;
+  --ink-4: #b0afa8;
+
+  --rule: rgba(23, 23, 23, 0.12);
+  --rule-strong: rgba(23, 23, 23, 0.24);
+  --rule-anchor: #171717;
+
+  --cobalt: #1342d6;
+  --cobalt-hover: #1e4fe8;
+  --cobalt-soft: rgba(19, 66, 214, 0.08);
+  --cobalt-ring: rgba(19, 66, 214, 0.28);
+
+  --inv-bg: #171717;
+  --inv-ink: #f6f5f0;
+
+  --ok: #0e8a5c;
+  --ok-soft: rgba(14, 138, 92, 0.11);
+  --warn: #b46d00;
+  --warn-soft: rgba(180, 109, 0, 0.12);
+  --danger: #cf261e;
+  --danger-soft: rgba(207, 38, 30, 0.1);
+}
+
+:root[data-theme="dark"] {
+  /* Swiss Negative Print (Deep Matte Carbon Ink) */
+  --paper: #0c0c0d;
+  --paper-tint: #141416;
+  --paper-elev: #111113;
+  --paper-overlay: rgba(0, 0, 0, 0.74);
+
+  --ink: #f2f1ec;
+  --ink-2: #a8a7a1;
+  --ink-3: #6e6d68;
+  --ink-4: #434340;
+
+  --rule: rgba(242, 241, 236, 0.11);
+  --rule-strong: rgba(242, 241, 236, 0.24);
+  --rule-anchor: #f2f1ec;
+
+  --cobalt: #3366ff;
+  --cobalt-hover: #4d7aff;
+  --cobalt-soft: rgba(51, 102, 255, 0.15);
+  --cobalt-ring: rgba(51, 102, 255, 0.38);
+
+  --inv-bg: #f2f1ec;
+  --inv-ink: #0c0c0d;
+
+  --ok: #10b981;
+  --ok-soft: rgba(16, 185, 129, 0.14);
+  --warn: #eab308;
+  --warn-soft: rgba(234, 179, 8, 0.16);
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+}
