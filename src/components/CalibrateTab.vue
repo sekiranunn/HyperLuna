@@ -108,8 +108,8 @@ const squalLabel = computed(() => {
 
 const contrastLabel = computed(() => {
   const g = opt.value?.contrastGrade;
-  if (g === 'high') return props.store.t('高对比');
-  if (g === 'normal') return props.store.t('对比适中');
+  if (g === 'high') return props.store.t('对比明显');
+  if (g === 'normal') return props.store.t('对比一般');
   return props.store.t('对比偏低');
 });
 
@@ -776,14 +776,19 @@ onBeforeUnmount(() => {
             <div class="m-cell">
               <div class="m-head">
                 <span class="m-name">{{ store.t('对比度') }}</span>
-                <span class="m-code">MAX − MIN · 7-BIT</span>
+                <span class="m-code">RAW RANGE</span>
               </div>
               <div class="m-val-row">
                 <span :class="['m-val', 'brand', opt.contrastGrade === 'low' ? 'danger' : '']">{{ opt.contrast }}</span>
                 <span class="m-u">/ 127</span>
                 <span v-if="optBase" class="delta-tag">{{ fmtDelta(opt.contrast, optBase.contrast) }}</span>
               </div>
-              <span class="m-sub">{{ contrastLabel }} · {{ store.t('均值') }} {{ opt.rawMean }} · {{ opt.rawMin }}–{{ opt.rawMax }}</span>
+              <div class="m-sub m-sub-split">
+                <span>{{ contrastLabel }}</span>
+                <span class="m-kv">
+                  <span class="m-k code">MIN</span><b class="m-n">{{ opt.rawMin }}</b><span class="m-sep">·</span><span class="m-k code">MAX</span><b class="m-n">{{ opt.rawMax }}</b>
+                </span>
+              </div>
             </div>
 
             <div class="m-cell">
@@ -798,7 +803,12 @@ onBeforeUnmount(() => {
                 <span class="m-u">ticks</span>
                 <span v-if="optBase" class="delta-tag">{{ fmtDelta(opt.shutter, optBase.shutter) }}</span>
               </div>
-              <span class="m-sub">{{ exposureLabel }}</span>
+              <div class="m-sub m-sub-split">
+                <span>{{ exposureLabel }}</span>
+                <span class="m-kv">
+                  <span class="m-k">{{ store.t('亮度均值') }}</span><b class="m-n">{{ opt.rawMean }}</b>
+                </span>
+              </div>
             </div>
 
             <div class="m-cell">
@@ -1544,6 +1554,42 @@ onBeforeUnmount(() => {
 .m-sub {
   font-size: 11.5px;
   color: var(--ink-3);
+}
+
+.m-sub-split {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.m-kv {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.m-k {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-4);
+}
+
+.m-k.code {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.m-n {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.m-sep {
+  margin: 0 3px;
+  color: var(--ink-4);
 }
 
 /* Open Measurement Surface (Tools 02, 03, 04) */

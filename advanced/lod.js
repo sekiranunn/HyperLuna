@@ -1,11 +1,12 @@
 const presets = new Map([[0,0.7],[0x87,0.7],[1,1],[0x85,1],[2,2],[0x8f,2]]);
 const isByte = code => Number.isInteger(code) && code >= 0 && code <= 255;
 
+// PAW3950 Bank 18:7A fine LOD spans 0x80..0x8F (low 4 bits, capped at 2.0 mm = 0x8F).
 // Millimetres between the vendor's presets are a two-point estimate, not a calibration.
 export function lodHeight(code) {
   if (!isByte(code)) return null;
   if (presets.has(code)) return presets.get(code);
-  return code & 0x80 ? (5 + (code & 0x7f)) / 10 : null;
+  return code >= 0x80 && code <= 0x8f ? (5 + (code & 0x0f)) / 10 : null;
 }
 
 export function lodLabel(code) {
@@ -16,7 +17,7 @@ export function lodLabel(code) {
 
 export function lodHeightOptions(currentCode) {
   const options = [];
-  for (let tenths = 7; tenths <= 30; tenths++) {
+  for (let tenths = 7; tenths <= 20; tenths++) {
     // 1.2 mm would encode as 0x87, reserved by the saved-setting protocol for 0.7 mm.
     if (tenths === 12) continue;
     let value = tenths === 7 ? 0x87 : tenths === 10 ? 1 : tenths === 20 ? 2 : 0x80 | (tenths - 5);

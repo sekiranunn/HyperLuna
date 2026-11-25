@@ -80,7 +80,7 @@ const activeAngle = computed(() => (
 
 const lodLiftPx = computed(() => {
   const mm = currentLodMm.value ?? 1.5;
-  return Number(Math.max(1.5, Math.min(9.5, ((mm - 0.5) / 2.5) * 9)).toFixed(1));
+  return Number(Math.max(1.5, Math.min(9.5, ((mm - 0.5) / 1.5) * 9)).toFixed(1));
 });
 
 function fpsRates(preset) {
@@ -141,13 +141,12 @@ function stepFps(delta) {
   props.store.state.draft.fps = list[next].value;
 }
 
-// LOD quick stops + full fine hex stepping across every store.lodOptions item
+// LOD quick stops (0.7..2.0 mm PAW3950 hardware range) + fine hex stepping
 const lodQuickStops = [
   {mm: 0.7, code: 0x87, label: '0.7'},
   {mm: 1.0, code: 1, label: '1.0'},
   {mm: 1.5, code: 0x8a, label: '1.5'},
-  {mm: 2.0, code: 2, label: '2.0'},
-  {mm: 3.0, code: 0x8f, label: '3.0'}
+  {mm: 2.0, code: 2, label: '2.0'}
 ];
 
 function selectQuickLod(preset) {
@@ -494,7 +493,11 @@ const saveMeta = computed(() => {
               </div>
             </div>
             <div class="lod-flex">
-              <div class="grid-strip tabular" style="flex:1">
+              <div
+                class="grid-strip tabular"
+                style="flex:1"
+                :style="{gridTemplateColumns: `repeat(${lodQuickStops.length}, 1fr)`}"
+              >
                 <button
                   v-for="preset in lodQuickStops"
                   :key="preset.mm"

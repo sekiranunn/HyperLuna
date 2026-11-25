@@ -24,11 +24,16 @@ test('height labels include saved raw codes and avoid the reserved 1.2 mm code',
   assert.equal(lodHeight(0x8a), 1.5);
   assert.equal(lodLabel(0x8a), '约 1.5 mm（0x8A）');
   const choices = lodHeightOptions(0x8a);
-  assert.equal(choices.length, 23);
+  assert.equal(choices.length, 13);
   for (const option of choices) assert.equal(lodHeight(option.value), parseFloat(option.label.replace('约 ', '')));
   assert.ok(!choices.some(option => option.label.includes('1.2')));
   assert.ok(choices.some(option => option.value === 0x87 && option.label === '0.7 mm（0x87）'));
-  assert.equal(choices.find(option => option.label === '约 3.0 mm（0x99）').value, 0x99);
+  assert.equal(choices.at(-1).value, 2);
+  assert.equal(choices.at(-1).label, '2.0 mm（0x02）');
+  assert.ok(choices.every(option => lodHeight(option.value) <= 2.0));
+  assert.equal(lodHeight(0x90), null);
+  assert.equal(lodHeight(0x99), null);
+  assert.equal(lodLabel(0x99), '当前高度未知（0x99）');
 });
 
 test('reading every saved LOD code preserves its exact byte, including aliases and unknown heights', () => {
