@@ -367,67 +367,398 @@ export function analyzePollingSamples(intervalsMs, countsPerEvent = [], configur
   };
 }
 
-/**
- * Switch health & double-click / chatter analyzer.
- * Input events: `[{button, type: 'down'|'up', t}]` where `t` is ms timestamp (`performance.now()`).
- */
-export function analyzeSwitchEvents(events, {chatterMs = 25, minHoldMs = 8} = {}) {
-  const stats = {};
-  const log = [];
-  const lastDown = {};
-  const lastUp = {};
+const SWITCH_MIN_SAMPLE_MS = 0.2;
+const SWITCH_MAX_INTERVAL_MS = 3000;
+const SWITCH_MAX_HOLD_MS = 5000;
+const SWITCH_MAX_REPLAY_EVENTS = 50000;
 
-  for (const ev of events || []) {
-    const b = ev.button;
-    if (!stats[b]) {
-      stats[b] = {
-        button: b,
-        presses: 0,
-        chatterCount: 0,
-        microHoldCount: 0,
-        minGapMs: null,
-        lastGapMs: null,
-        minHoldMs: null,
-        lastHoldMs: null
-      };
+function formatSwitchMs(val, limit = null) {
+  if (val === null || val === undefined || !Number.isFinite(val)) return null;
+  if (limit !== null && val < limit) {
+    const decimals = val < 10 ? 2 : 1;
+    const rounded = Number(val.toFixed(decimals));
+    if (rounded >= limit) {
+      const two = Number(val.toFixed(2));
+      return two >= limit ? Number((Math.floor(val * 100) / 100).toFixed(2)) : two;
     }
-    const s = stats[b];
-    if (ev.type === 'down') {
-      s.presses++;
-      let gapMs = null;
-      let isChatter = false;
-      if (lastUp[b] !== undefined) {
-        gapMs = Math.max(0, ev.t - lastUp[b]);
-        s.lastGapMs = Number(gapMs.toFixed(1));
-        if (s.minGapMs === null || gapMs < s.minGapMs) s.minGapMs = Number(gapMs.toFixed(1));
-        if (gapMs < chatterMs) {
-          s.chatterCount++;
-          isChatter = true;
-        }
+    return rounded;
+  }
+  return Number(val.toFixed(val < 10 ? 2 : 1));
+}
+
+function emptyButtonState(button) {
+  return {
+    button,
+    presses: 0,
+    releases: 0,
+    isPressed: false,
+    doubleHits: 0,
+    doubleClickCount: 0,
+    chatterCount: 0,
+    microHoldCount: 0,
+    lastDownT: null,
+    downStartT: null,
+    lastUpT: null,
+    lastDownDownMs: null,
+    minDownDownMs: null,
+    downDownSum: 0,
+    downDownSamples: 0,
+    lastGapMs: null,
+    minGapMs: null,
+    lastHoldMs: null,
+    minHoldMs: null,
+    holdSum: 0,
+    holdSamples: 0
+  };
+}
+
+function emptyWheelState() {
+  return {
+    up: 0,
+    down: 0,
+    reverseCount: 0,
+    lastDir: null,
+    prevDir: null,
+    prevT: null,
+    lastT: null
+  };
+}
+
+/**
+ * Normalize customizable double-click threshold (Down -> Down, ms).
+ */
+export function normalizeDoubleClickMs(raw, fallback = 80) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(10, Math.min(500, Math.round(n)));
+}
+
+/**
+ * Unbounded incremental switch & scroll-wheel diagnostic bench.
+ * Supports instant live re-evaluation when thresholds change without dropping click counts.
+ */
+export function createSwitchBench({
+  doubleClickMs = 80,
+  chatterMs = 25,
+  minHoldMs = 8,
+  maxLog = 24,
+  wheelReverseWindowMs = 150
+} = {}) {
+  return {
+    doubleClickMs,
+    chatterMs,
+    minHoldMs,
+    maxLog,
+    wheelReverseWindowMs,
+    byButton: {},
+    wheel: emptyWheelState(),
+    recent: [],
+    lastAnomalySeq: {},
+    _seq: 0,
+    _events: []
+  };
+}
+
+function ensureButton(bench, button) {
+  if (!bench.byButton[button]) {
+    bench.byButton[button] = emptyButtonState(button);
+  }
+  return bench.byButton[button];
+}
+
+function pushTape(bench, entry) {
+  bench.recent.push(entry);
+  if (bench.recent.length > bench.maxLog) {
+    bench.recent.splice(0, bench.recent.length - bench.maxLog);
+  }
+}
+
+function recordReplayEvent(bench, ev, record) {
+  if (record && bench._events.length < SWITCH_MAX_REPLAY_EVENTS) {
+    bench._events.push(ev);
+  }
+}
+
+function applySwitchDown(bench, button, t, opts = {}, record = true) {
+  const s = ensureButton(bench, button);
+  if (s.isPressed) return {ignored: true, reason: 'repeat'};
+
+  recordReplayEvent(bench, {type: 'down', button, t}, record);
+
+  const doubleLimit = opts.doubleClickMs ?? bench.doubleClickMs;
+  const rawChatter = opts.chatterMs ?? bench.chatterMs;
+  const chatterLimit = doubleLimit > 0 ? Math.min(rawChatter, doubleLimit) : rawChatter;
+
+  s.isPressed = true;
+  s.downStartT = t;
+  s.presses++;
+
+  let downDownMs = null;
+  let dispDownDown = null;
+  let isDouble = false;
+  if (s.lastDownT !== null) {
+    downDownMs = Math.max(0, t - s.lastDownT);
+    dispDownDown = formatSwitchMs(downDownMs, doubleLimit > 0 ? doubleLimit : null);
+    s.lastDownDownMs = dispDownDown;
+    if (downDownMs > SWITCH_MIN_SAMPLE_MS && downDownMs < SWITCH_MAX_INTERVAL_MS) {
+      if (s.minDownDownMs === null || downDownMs < s.minDownDownMs) {
+        s.minDownDownMs = dispDownDown;
       }
-      lastDown[b] = ev.t;
-      log.push({button: b, type: 'down', t: ev.t, gapMs: s.lastGapMs, holdMs: null, suspect: isChatter, reason: isChatter ? 'double' : 'ok'});
-    } else if (ev.type === 'up') {
-      let holdMs = null;
-      let isMicro = false;
-      if (lastDown[b] !== undefined) {
-        holdMs = Math.max(0, ev.t - lastDown[b]);
-        s.lastHoldMs = Number(holdMs.toFixed(1));
-        if (s.minHoldMs === null || holdMs < s.minHoldMs) s.minHoldMs = Number(holdMs.toFixed(1));
-        if (holdMs < minHoldMs) {
-          s.microHoldCount++;
-          isMicro = true;
-        }
-      }
-      lastUp[b] = ev.t;
-      if (isMicro) {
-        log.push({button: b, type: 'up', t: ev.t, gapMs: null, holdMs: s.lastHoldMs, suspect: true, reason: 'micro'});
-      }
+      s.downDownSum += downDownMs;
+      s.downDownSamples++;
+    }
+    if (doubleLimit > 0 && downDownMs < doubleLimit) {
+      s.doubleClickCount++;
+      isDouble = true;
     }
   }
 
+  let gapMs = null;
+  let dispGap = null;
+  let isChatter = false;
+  if (s.lastUpT !== null) {
+    gapMs = Math.max(0, t - s.lastUpT);
+    dispGap = formatSwitchMs(gapMs, chatterLimit);
+    s.lastGapMs = dispGap;
+    if (s.minGapMs === null || gapMs < s.minGapMs) {
+      s.minGapMs = dispGap;
+    }
+    if (gapMs < chatterLimit) {
+      s.chatterCount++;
+      isChatter = true;
+    }
+  }
+
+  s.lastDownT = t;
+
+  const isAnomaly = isChatter || isDouble;
+  if (isAnomaly) s.doubleHits++;
+  const reason = isChatter ? 'bounce' : isDouble ? 'double' : 'ok';
+  bench._seq++;
+  if (isAnomaly) bench.lastAnomalySeq[reason] = bench._seq;
+
+  pushTape(bench, {
+    kind: 'button',
+    button,
+    type: 'down',
+    t,
+    gapMs: dispGap,
+    downDownMs: dispDownDown,
+    holdMs: null,
+    suspect: isAnomaly,
+    reason
+  });
+
   return {
-    byButton: stats,
-    recent: log.slice(-18).reverse()
+    ignored: false,
+    isChatter,
+    isDouble,
+    isAnomaly,
+    reason,
+    gapMs: dispGap,
+    downDownMs: dispDownDown
   };
+}
+
+function applySwitchUp(bench, button, t, opts = {}, record = true) {
+  const s = ensureButton(bench, button);
+  recordReplayEvent(bench, {type: 'up', button, t}, record);
+
+  const minHoldLimit = opts.minHoldMs ?? bench.minHoldMs;
+
+  let holdMs = null;
+  let dispHold = null;
+  let isMicro = false;
+  if (s.isPressed && s.downStartT !== null) {
+    holdMs = Math.max(0, t - s.downStartT);
+    dispHold = formatSwitchMs(holdMs, minHoldLimit);
+    s.lastHoldMs = dispHold;
+    if (s.minHoldMs === null || holdMs < s.minHoldMs) {
+      s.minHoldMs = dispHold;
+    }
+    if (holdMs > SWITCH_MIN_SAMPLE_MS && holdMs < SWITCH_MAX_HOLD_MS) {
+      s.holdSum += holdMs;
+      s.holdSamples++;
+    }
+    if (holdMs < minHoldLimit) {
+      s.microHoldCount++;
+      isMicro = true;
+    }
+  }
+
+  s.isPressed = false;
+  s.downStartT = null;
+  s.releases++;
+  s.lastUpT = t;
+
+  if (isMicro) {
+    bench._seq++;
+    bench.lastAnomalySeq.micro = bench._seq;
+    pushTape(bench, {
+      kind: 'button',
+      button,
+      type: 'up',
+      t,
+      gapMs: null,
+      downDownMs: null,
+      holdMs: dispHold,
+      suspect: true,
+      reason: 'micro'
+    });
+  }
+
+  return {
+    isMicro,
+    holdMs: dispHold
+  };
+}
+
+function applyWheelTick(bench, deltaY, t, opts = {}, record = true) {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return {ignored: true};
+  recordReplayEvent(bench, {type: 'wheel', deltaY, t}, record);
+
+  const dir = deltaY < 0 ? 'up' : 'down';
+  const w = bench.wheel;
+  if (dir === 'up') w.up++;
+  else w.down++;
+
+  const winMs = opts.wheelReverseWindowMs ?? bench.wheelReverseWindowMs;
+  let isReverse = false;
+  if (w.prevDir && w.lastDir && w.prevDir === dir && w.lastDir !== dir && w.prevT !== null && (t - w.prevT) <= winMs) {
+    w.reverseCount++;
+    isReverse = true;
+    bench._seq++;
+    bench.lastAnomalySeq.reverse = bench._seq;
+    pushTape(bench, {
+      kind: 'wheel',
+      button: null,
+      dir,
+      type: 'wheel',
+      t,
+      gapMs: formatSwitchMs(Math.max(0, t - w.prevT)),
+      downDownMs: null,
+      holdMs: null,
+      suspect: true,
+      reason: 'reverse'
+    });
+    w.prevDir = null;
+    w.prevT = null;
+    w.lastDir = dir;
+    w.lastT = t;
+  } else {
+    w.prevDir = w.lastDir;
+    w.prevT = w.lastT;
+    w.lastDir = dir;
+    w.lastT = t;
+  }
+
+  return {ignored: false, dir, isReverse};
+}
+
+export function pushSwitchDown(bench, button, t, opts = {}) {
+  return applySwitchDown(bench, button, t, opts, true);
+}
+
+export function pushSwitchUp(bench, button, t, opts = {}) {
+  return applySwitchUp(bench, button, t, opts, true);
+}
+
+export function pushWheelTick(bench, deltaY, t, opts = {}) {
+  return applyWheelTick(bench, deltaY, t, opts, true);
+}
+
+export function resetSwitchTransient(bench, record = true) {
+  let cleared = false;
+  for (const s of Object.values(bench.byButton)) {
+    if (s.isPressed) cleared = true;
+    s.isPressed = false;
+    s.downStartT = null;
+  }
+  if (cleared) recordReplayEvent(bench, {type: 'blur'}, record);
+}
+
+/**
+ * Re-evaluate all recorded events under updated thresholds without losing click history.
+ */
+export function recomputeSwitchBench(bench, {doubleClickMs, chatterMs, minHoldMs} = {}) {
+  if (doubleClickMs !== undefined) bench.doubleClickMs = doubleClickMs;
+  if (chatterMs !== undefined) bench.chatterMs = chatterMs;
+  if (minHoldMs !== undefined) bench.minHoldMs = minHoldMs;
+
+  const events = bench._events;
+  bench.byButton = {};
+  bench.wheel = emptyWheelState();
+  bench.recent = [];
+  bench.lastAnomalySeq = {};
+  bench._seq = 0;
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.type === 'down') {
+      applySwitchDown(bench, ev.button, ev.t, {}, false);
+    } else if (ev.type === 'up') {
+      applySwitchUp(bench, ev.button, ev.t, {}, false);
+    } else if (ev.type === 'wheel') {
+      applyWheelTick(bench, ev.deltaY, ev.t, {}, false);
+    } else if (ev.type === 'blur') {
+      resetSwitchTransient(bench, false);
+    }
+  }
+  return snapshotSwitchBench(bench);
+}
+
+export function snapshotSwitchBench(bench) {
+  const byButton = {};
+  for (const [key, s] of Object.entries(bench.byButton)) {
+    byButton[key] = {
+      button: s.button,
+      presses: s.presses,
+      releases: s.releases,
+      isPressed: s.isPressed,
+      doubleHits: s.doubleHits,
+      doubleClickCount: s.doubleClickCount,
+      chatterCount: s.chatterCount,
+      microHoldCount: s.microHoldCount,
+      lastDownDownMs: s.lastDownDownMs,
+      minDownDownMs: s.minDownDownMs,
+      avgDownDownMs: s.downDownSamples > 0 ? formatSwitchMs(s.downDownSum / s.downDownSamples) : null,
+      lastGapMs: s.lastGapMs,
+      minGapMs: s.minGapMs,
+      lastHoldMs: s.lastHoldMs,
+      minHoldMs: s.minHoldMs,
+      avgHoldMs: s.holdSamples > 0 ? formatSwitchMs(s.holdSum / s.holdSamples) : null
+    };
+  }
+  const activeAnomalies = Object.entries(bench.lastAnomalySeq)
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason]) => reason);
+  return {
+    byButton,
+    wheel: {
+      up: bench.wheel.up,
+      down: bench.wheel.down,
+      reverseCount: bench.wheel.reverseCount,
+      lastDir: bench.wheel.lastDir
+    },
+    activeAnomalies,
+    recent: bench.recent.slice(-18).reverse()
+  };
+}
+
+/**
+ * Switch health & double-click / chatter analyzer (batch wrapper over createSwitchBench).
+ * Input events: `[{button, type: 'down'|'up', t}]` where `t` is ms timestamp.
+ */
+export function analyzeSwitchEvents(events, {chatterMs = 25, doubleClickMs = 80, minHoldMs = 8} = {}) {
+  const bench = createSwitchBench({chatterMs, doubleClickMs, minHoldMs});
+  for (const ev of events || []) {
+    if (ev.type === 'down') {
+      pushSwitchDown(bench, ev.button, ev.t);
+    } else if (ev.type === 'up') {
+      pushSwitchUp(bench, ev.button, ev.t);
+    } else if (ev.type === 'wheel') {
+      pushWheelTick(bench, ev.deltaY, ev.t);
+    }
+  }
+  return snapshotSwitchBench(bench);
 }

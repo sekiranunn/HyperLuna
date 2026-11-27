@@ -151,16 +151,13 @@ test('a change to another key after preview prevents any write', async () => {
 const port = fileURLToPath(new URL('../../lunafury-analysis/port', import.meta.url));
 const python = fileURLToPath(new URL('../../.hyperdrako-analysis-venv/Scripts/python.exe', import.meta.url));
 test(
-  'browser client writes all five-key policies and switch masks on each published DB ARM image',
-  {timeout: 120000, skip: !existsSync(port + '/switch_patch.py') || !existsSync(python)},
+  'browser client writes five-key policies, switch masks, and Rev 52+ custom Lift Guard on the unified Rev 53 LUNA33_HYPERLUNA ARM image',
+  {timeout: 120000, skip: !existsSync(port + '/abs_stream_rev53_mouse_patch.py') || !existsSync(python)},
   async () => {
-    for (const variant of ['ABLODDB']) {
-      const code = `import sys,json
-from pathlib import Path
+    const code = `import sys,json
 sys.path.insert(0,sys.argv[1])
-sys.path.insert(0,str(Path(sys.argv[1]).parents[1]/'lunafury-driver/variants'))
-import build_variants,full_model
-m=full_model.FullModel(*build_variants.build(sys.argv[2]))
+import abs_stream_rev53_mouse_patch as rev53,full_model
+m=full_model.FullModel(*rev53.build())
 for line in sys.stdin:
  try:
   q=json.loads(line)
@@ -168,46 +165,73 @@ for line in sys.stdin:
   print(json.dumps({'reply':list(r)}),flush=True)
  except Exception as e: print(json.dumps({'error':str(e)}),flush=True)
 `;
-      const child = spawn(python, ['-X', 'utf8', '-B', '-c', code, port, variant], {stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true});
-      const waiting = []; let stderr = '';
-      child.stderr.on('data', data => { stderr += data; });
-      child.on('error', error => { while (waiting.length) waiting.shift().reject(error); });
-      child.on('exit', exit => { while (waiting.length) waiting.shift().reject(Error(`ARM exited ${exit}: ${stderr}`)); });
-      const lines = createInterface({input: child.stdout});
-      lines.on('line', line => {
-        const pending = waiting.shift(); if (!pending) return;
-        try { const r = JSON.parse(line); if (r.error) pending.reject(Error(r.error)); else pending.resolve(Uint8Array.from(r.reply)); }
-        catch (e) { pending.reject(e); }
-      });
-      const c = new LunaClient({
-        exchange(command, payload, group = 1) {
-          return new Promise((resolve, reject) => {
-            waiting.push({resolve, reject});
-            child.stdin.write(JSON.stringify({command, payload: [...payload], group}) + '\n');
-          });
-        }
-      }, definitions);
-      try {
-        const features = (await c.info()).features;
-        assert.equal(features.independentDebounce, true);
-        assert.equal(c.phaseDiagnostics, undefined);
-        assert.equal(features.name, variant);
-        assert.ok([26, 36, 40, 44, 45, 46, 47, 48, 49, 50].includes(features.implementationRevision));
-        assert.equal(features.buttonCount, 5);
-        const policy = n => features.debounce === 'ms' ? {pre: n, post: n + 1, plock: n + 2, relock: n + 3} : times(n);
-        for (let slot = 1; slot <= 4; slot++) for (let key = 0; key < 5; key++) await c.putButtonTimings(slot, key, policy(slot * 5 + key));
-        for (let slot = 1; slot <= 4; slot++) for (let key = 0; key < 5; key++) assert.deepEqual(await c.getButtonTimings(slot, key), policy(slot * 5 + key));
-        for (let mask = 0; mask < 32; mask++) {
-          const raw = await c.getProfile(1), value = decodeProfile(raw);
-          value.buttons = Array.from({length: 5}, (_, key) => ({enabled: Boolean(mask & (1 << key))}));
-          const requested = encodeProfile(raw, value, 34, features);
-          await c.putProfile(1, requested);
-          assert.equal(buttonMask(await c.getProfile(1)), mask);
-        }
-        await assert.rejects(c.getButtonTimings(1, 5), /按键编号/);
-      } finally {
-        child.stdin.end(); lines.close(); child.kill();
+    const child = spawn(python, ['-X', 'utf8', '-B', '-c', code, port], {stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true});
+    const waiting = []; let stderr = '';
+    child.stderr.on('data', data => { stderr += data; });
+    child.on('error', error => { while (waiting.length) waiting.shift().reject(error); });
+    child.on('exit', exit => { while (waiting.length) waiting.shift().reject(Error(`ARM exited ${exit}: ${stderr}`)); });
+    const lines = createInterface({input: child.stdout});
+    lines.on('line', line => {
+      const pending = waiting.shift(); if (!pending) return;
+      try { const r = JSON.parse(line); if (r.error) pending.reject(Error(r.error)); else pending.resolve(Uint8Array.from(r.reply)); }
+      catch (e) { pending.reject(e); }
+    });
+    const c = new LunaClient({
+      exchange(command, payload, group = 1) {
+        return new Promise((resolve, reject) => {
+          waiting.push({resolve, reject});
+          child.stdin.write(JSON.stringify({command, payload: [...payload], group}) + '\n');
+        });
       }
+    }, definitions);
+    try {
+      const features = (await c.info()).features;
+      assert.equal(features.independentDebounce, true);
+      assert.equal(c.phaseDiagnostics, undefined);
+      assert.equal(features.name, 'LUNA33_HYPERLUNA');
+      assert.equal(features.implementationRevision, 53);
+      assert.equal(features.quietWindow, true);
+      assert.equal(features.customLandingGuard, true);
+      assert.equal(features.buttonCount, 5);
+      const policy = n => features.debounce === 'ms' ? {pre: n, post: n + 1, plock: n + 2, relock: n + 3} : times(n);
+      for (let slot = 1; slot <= 4; slot++) for (let key = 0; key < 5; key++) await c.putButtonTimings(slot, key, policy(slot * 5 + key));
+      for (let slot = 1; slot <= 4; slot++) for (let key = 0; key < 5; key++) assert.deepEqual(await c.getButtonTimings(slot, key), policy(slot * 5 + key));
+      for (let mask = 0; mask < 32; mask++) {
+        const raw = await c.getProfile(1), value = decodeProfile(raw);
+        value.buttons = Array.from({length: 5}, (_, key) => ({enabled: Boolean(mask & (1 << key))}));
+        const requested = encodeProfile(raw, value, 34, features);
+        await c.putProfile(1, requested);
+        assert.equal(buttonMask(await c.getProfile(1)), mask);
+      }
+      // Rev 52 custom Lift Guard round-trip on live ARM image
+      const liftCases = [
+        {landingProtection: true, landingHoldMs: 60, airborneFloorMs: 20, airborneLockout: false, landingMask: 0x1f},
+        {landingProtection: true, landingHoldMs: 0, airborneFloorMs: 8, airborneLockout: true, landingMask: 0x05},
+        {landingProtection: false, landingHoldMs: 42, airborneFloorMs: 12, airborneLockout: false, landingMask: 0x18},
+        {landingProtection: true, landingHoldMs: 28, airborneFloorMs: 8, airborneLockout: false, landingMask: 0x03}
+      ];
+      for (const cfg of liftCases) {
+        const raw = await c.getProfile(1), value = {...decodeProfile(raw), ...cfg};
+        value.buttons = Array.from({length: 5}, () => ({enabled: true}));
+        const requested = encodeProfile(raw, value, 34, features);
+        await c.putProfile(1, requested);
+        const readback = decodeProfile(await c.getProfile(1));
+        assert.equal(readback.landingProtection, cfg.landingProtection);
+        assert.equal(readback.landingHoldMs, cfg.landingHoldMs);
+        assert.equal(readback.airborneLockout, cfg.airborneLockout);
+        assert.equal(readback.airborneFloorMs, cfg.airborneLockout ? 8 : cfg.airborneFloorMs);
+        assert.equal(readback.landingMask, cfg.landingMask);
+      }
+      // Malformed Lift Guard bytes must be rejected by firmware ProtocolOp2Validate (0xA2)
+      const validRaw = await c.getProfile(1);
+      for (const [idx, val] of [[14, 0x04], [2, 8], [15, 28]]) {
+        const bad = validRaw.slice(); bad[idx] = val;
+        const reply = await c.extension(2, 1, ...bad);
+        assert.equal(reply[0], 0xa2);
+      }
+      await assert.rejects(c.getButtonTimings(1, 5), /按键编号/);
+    } finally {
+      child.stdin.end(); lines.close(); child.kill();
     }
   }
 );

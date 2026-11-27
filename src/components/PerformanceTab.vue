@@ -1,5 +1,5 @@
 <script setup>
-import {computed} from 'vue';
+import {computed, ref, watch} from 'vue';
 import {
   RATES, DPI_MIN, DPI_MAX, DPI_STEP, DPI_MAX_STAGES,
   DEFAULT_DPI_COLORS, ANGLE_TUNE_MIN, ANGLE_TUNE_MAX
@@ -23,36 +23,57 @@ const activeStageObj = computed(() => {
   return stages[activeStage - 1] || stages[0] || {x: 800, y: 800, color: '#1342d6'};
 });
 
-// Piecewise-linear perceptual anchors so 400 / 800 / 1600 / 3200 align pixel-accurately with the thumb
-const dpiAnchors = computed(() => {
-  const top = Math.max(6400, activeStageObj.value.x);
-  return [DPI_MIN, 400, 800, 1600, 3200, top];
+const xySplit = ref(activeStageObj.value.x !== activeStageObj.value.y);
+const isXyDiverged = computed(() => activeStageObj.value.x !== activeStageObj.value.y);
+
+watch(
+  () => [props.store.state.slot, props.store.state.dpiDraft.activeStage],
+  () => {
+    xySplit.value = activeStageObj.value.x !== activeStageObj.value.y;
+  }
+);
+
+watch(isXyDiverged, diverged => {
+  if (diverged) xySplit.value = true;
 });
 
-const dpiSliderPos = computed(() => {
-  const anchors = dpiAnchors.value;
-  const val = Math.max(anchors[0], Math.min(anchors[anchors.length - 1], activeStageObj.value.x));
+function toggleXySplit() {
+  if (xySplit.value) {
+    props.store.setActiveDpiValue(activeStageObj.value.x, 'y');
+    xySplit.value = false;
+  } else {
+    xySplit.value = true;
+  }
+}
+
+// Piecewise-linear perceptual anchors so 400 / 800 / 1600 / 3200 align pixel-accurately with the thumb
+function anchorsFor(val) {
+  const top = Math.max(6400, val);
+  return [DPI_MIN, 400, 800, 1600, 3200, top];
+}
+
+function sliderPosFor(val, anchors) {
+  const clamped = Math.max(anchors[0], Math.min(anchors[anchors.length - 1], val));
   const segs = anchors.length - 1;
   for (let i = 0; i < segs; i++) {
     const a = anchors[i];
     const b = anchors[i + 1];
-    if (val <= b || i === segs - 1) {
-      const frac = b > a ? (val - a) / (b - a) : 0;
+    if (clamped <= b || i === segs - 1) {
+      const frac = b > a ? (clamped - a) / (b - a) : 0;
       return Math.round(((i + frac) / segs) * 1000);
     }
   }
   return 0;
-});
+}
 
-const dpiSliderStyle = computed(() => {
-  const pct = dpiSliderPos.value / 10;
+function sliderStyleFor(pos, colorVar = 'var(--cobalt)') {
+  const pct = pos / 10;
   return {
-    background: `linear-gradient(90deg, var(--cobalt) 0%, var(--cobalt) ${pct}%, var(--rule-strong) ${pct}%, var(--rule-strong) 100%)`
+    background: `linear-gradient(90deg, ${colorVar} 0%, ${colorVar} ${pct}%, var(--rule-strong) ${pct}%, var(--rule-strong) 100%)`
   };
-});
+}
 
-function posToDpi(pos) {
-  const anchors = dpiAnchors.value;
+function posToDpi(pos, anchors) {
   const segs = anchors.length - 1;
   const t = Math.max(0, Math.min(1, Number(pos) / 1000)) * segs;
   const i = Math.min(segs - 1, Math.floor(t));
@@ -62,13 +83,21 @@ function posToDpi(pos) {
   return Math.max(DPI_MIN, Math.min(DPI_MAX, snapped));
 }
 
-function onDpiSliderInput(event) {
-  props.store.setActiveDpiValue(posToDpi(event.target.value));
+const dpiAnchors = computed(() => anchorsFor(activeStageObj.value.x));
+const dpiAnchorsY = computed(() => anchorsFor(activeStageObj.value.y));
+const dpiSliderPos = computed(() => sliderPosFor(activeStageObj.value.x, dpiAnchors.value));
+const dpiSliderPosY = computed(() => sliderPosFor(activeStageObj.value.y, dpiAnchorsY.value));
+const dpiSliderStyle = computed(() => sliderStyleFor(dpiSliderPos.value));
+const dpiSliderStyleY = computed(() => sliderStyleFor(dpiSliderPosY.value, 'var(--ink-2)'));
+
+function onDpiSliderInput(event, axis = 'both') {
+  const anchors = axis === 'y' ? dpiAnchorsY.value : dpiAnchors.value;
+  props.store.setActiveDpiValue(posToDpi(event.target.value, anchors), axis);
 }
 
-function onDpiNumberInput(event) {
+function onDpiNumberInput(event, axis = 'both') {
   const val = Number(event.target.value);
-  if (Number.isFinite(val)) props.store.setActiveDpiValue(val);
+  if (Number.isFinite(val)) props.store.setActiveDpiValue(val, axis);
 }
 
 const pollingHz = computed(() => RATES[props.store.state.legacy.polling] || 0);
@@ -263,7 +292,7 @@ const saveMeta = computed(() => {
             </g>
           </svg>
 
-          <div class="ortho-meta om-tl tabular">DPI<b>{{ activeStageObj.x }}</b></div>
+          <div class="ortho-meta om-tl tabular">DPI<b>{{ isXyDiverged ? `${activeStageObj.x}/${activeStageObj.y}` : activeStageObj.x }}</b></div>
           <div class="ortho-meta om-tr tabular">RATE<b>{{ pollingHz }} Hz</b></div>
           <div class="ortho-meta om-bl tabular">LOD<b>{{ currentLodMm !== null ? `${currentLodMm.toFixed(1)} mm` : '—' }}</b></div>
           <div v-if="store.state.base.angleTune !== null" class="ortho-meta om-br tabular">
@@ -319,7 +348,9 @@ const saveMeta = computed(() => {
           </div>
 
           <div class="dpi-figure">
-            <span class="dpi-huge brand tabular">{{ activeStageObj.x }}</span>
+            <span :class="['dpi-huge', 'brand', 'tabular', {split: isXyDiverged}]">
+              {{ isXyDiverged ? `${activeStageObj.x} / ${activeStageObj.y}` : activeStageObj.x }}
+            </span>
             <span class="dpi-u">DPI</span>
           </div>
 
@@ -334,7 +365,7 @@ const saveMeta = computed(() => {
               @click="store.selectDpiStage(idx + 1)"
             >
               <span class="st-n">0{{ idx + 1 }}</span>
-              <span class="st-v">{{ stage.x }}</span>
+              <span :class="['st-v', {split: stage.x !== stage.y}]">{{ stage.x === stage.y ? stage.x : `${stage.x}/${stage.y}` }}</span>
             </button>
             <button
               v-if="store.state.dpiDraft.stages.length < DPI_MAX_STAGES"
@@ -351,36 +382,46 @@ const saveMeta = computed(() => {
         <div class="dpi-ruler-bay">
           <div class="idx-head">
             <span class="idx-label tabular">50 — 30,000 · STEP 50</span>
-            <div class="step-box tabular">
+            <div class="dpi-head-tools">
               <button
-                class="step-b"
                 type="button"
-                :disabled="store.state.busy || activeStageObj.x <= DPI_MIN"
-                aria-label="-50"
-                @click="store.stepActiveDpi(-DPI_STEP)"
-              >−</button>
-              <input
-                class="step-in tabular"
-                type="number"
-                :min="DPI_MIN"
-                :max="DPI_MAX"
-                :step="DPI_STEP"
-                :value="activeStageObj.x"
+                :class="['xy-toggle', {active: xySplit}]"
                 :disabled="store.state.busy"
-                :aria-label="store.t('当前 DPI 数值')"
-                @change="onDpiNumberInput"
-              />
-              <button
-                class="step-b"
-                type="button"
-                :disabled="store.state.busy || activeStageObj.x >= DPI_MAX"
-                aria-label="+50"
-                @click="store.stepActiveDpi(DPI_STEP)"
-              >+</button>
+                :aria-pressed="xySplit"
+                @click="toggleXySplit"
+              >{{ store.t('独立 X/Y') }}</button>
+
+              <div v-if="!xySplit" class="step-box tabular">
+                <button
+                  class="step-b"
+                  type="button"
+                  :disabled="store.state.busy || activeStageObj.x <= DPI_MIN"
+                  aria-label="-50"
+                  @click="store.stepActiveDpi(-DPI_STEP)"
+                >−</button>
+                <input
+                  class="step-in tabular"
+                  type="number"
+                  :min="DPI_MIN"
+                  :max="DPI_MAX"
+                  :step="DPI_STEP"
+                  :value="activeStageObj.x"
+                  :disabled="store.state.busy"
+                  :aria-label="store.t('当前 DPI 数值')"
+                  @change="onDpiNumberInput($event, 'both')"
+                />
+                <button
+                  class="step-b"
+                  type="button"
+                  :disabled="store.state.busy || activeStageObj.x >= DPI_MAX"
+                  aria-label="+50"
+                  @click="store.stepActiveDpi(DPI_STEP)"
+                >+</button>
+              </div>
             </div>
           </div>
 
-          <div class="ruler-wrap">
+          <div v-if="!xySplit" class="ruler-wrap">
             <input
               class="swiss-range"
               type="range"
@@ -391,7 +432,7 @@ const saveMeta = computed(() => {
               :style="dpiSliderStyle"
               :disabled="store.state.busy"
               :aria-label="store.t('当前 DPI 数值')"
-              @input="onDpiSliderInput"
+              @input="onDpiSliderInput($event, 'both')"
             />
             <div class="ruler-scale tabular">
               <button
@@ -401,8 +442,122 @@ const saveMeta = computed(() => {
                 :disabled="store.state.busy"
                 :class="['r-mark', {active: activeStageObj.x === anchor}]"
                 :style="{left: `calc(5px + (100% - 10px) * ${idx / (dpiAnchors.length - 1)})`}"
-                @click="store.setActiveDpiValue(anchor)"
+                @click="store.setActiveDpiValue(anchor, 'both')"
               >{{ anchor }}</button>
+            </div>
+          </div>
+
+          <div v-else class="xy-stack">
+            <div class="xy-axis-row">
+              <span class="xy-axis-tag axis-x tabular">X</span>
+              <div class="xy-slider-col">
+                <input
+                  class="swiss-range"
+                  type="range"
+                  min="0"
+                  max="1000"
+                  step="1"
+                  :value="dpiSliderPos"
+                  :style="dpiSliderStyle"
+                  :disabled="store.state.busy"
+                  :aria-label="store.t('X 轴 DPI')"
+                  @input="onDpiSliderInput($event, 'x')"
+                />
+                <div class="ruler-scale compact tabular">
+                  <button
+                    v-for="(anchor, idx) in dpiAnchors"
+                    :key="`x-${anchor}`"
+                    type="button"
+                    :disabled="store.state.busy"
+                    :class="['r-mark', {active: activeStageObj.x === anchor}]"
+                    :style="{left: `calc(5px + (100% - 10px) * ${idx / (dpiAnchors.length - 1)})`}"
+                    @click="store.setActiveDpiValue(anchor, 'x')"
+                  >{{ anchor }}</button>
+                </div>
+              </div>
+              <div class="step-box compact tabular">
+                <button
+                  class="step-b"
+                  type="button"
+                  :disabled="store.state.busy || activeStageObj.x <= DPI_MIN"
+                  aria-label="X -50"
+                  @click="store.stepActiveDpi(-DPI_STEP, 'x')"
+                >−</button>
+                <input
+                  class="step-in tabular"
+                  type="number"
+                  :min="DPI_MIN"
+                  :max="DPI_MAX"
+                  :step="DPI_STEP"
+                  :value="activeStageObj.x"
+                  :disabled="store.state.busy"
+                  :aria-label="store.t('X 轴 DPI')"
+                  @change="onDpiNumberInput($event, 'x')"
+                />
+                <button
+                  class="step-b"
+                  type="button"
+                  :disabled="store.state.busy || activeStageObj.x >= DPI_MAX"
+                  aria-label="X +50"
+                  @click="store.stepActiveDpi(DPI_STEP, 'x')"
+                >+</button>
+              </div>
+            </div>
+
+            <div class="xy-axis-row">
+              <span class="xy-axis-tag axis-y tabular">Y</span>
+              <div class="xy-slider-col">
+                <input
+                  class="swiss-range range-y"
+                  type="range"
+                  min="0"
+                  max="1000"
+                  step="1"
+                  :value="dpiSliderPosY"
+                  :style="dpiSliderStyleY"
+                  :disabled="store.state.busy"
+                  :aria-label="store.t('Y 轴 DPI')"
+                  @input="onDpiSliderInput($event, 'y')"
+                />
+                <div class="ruler-scale compact tabular">
+                  <button
+                    v-for="(anchor, idx) in dpiAnchorsY"
+                    :key="`y-${anchor}`"
+                    type="button"
+                    :disabled="store.state.busy"
+                    :class="['r-mark', 'mark-y', {active: activeStageObj.y === anchor}]"
+                    :style="{left: `calc(5px + (100% - 10px) * ${idx / (dpiAnchorsY.length - 1)})`}"
+                    @click="store.setActiveDpiValue(anchor, 'y')"
+                  >{{ anchor }}</button>
+                </div>
+              </div>
+              <div class="step-box compact tabular">
+                <button
+                  class="step-b"
+                  type="button"
+                  :disabled="store.state.busy || activeStageObj.y <= DPI_MIN"
+                  aria-label="Y -50"
+                  @click="store.stepActiveDpi(-DPI_STEP, 'y')"
+                >−</button>
+                <input
+                  class="step-in tabular"
+                  type="number"
+                  :min="DPI_MIN"
+                  :max="DPI_MAX"
+                  :step="DPI_STEP"
+                  :value="activeStageObj.y"
+                  :disabled="store.state.busy"
+                  :aria-label="store.t('Y 轴 DPI')"
+                  @change="onDpiNumberInput($event, 'y')"
+                />
+                <button
+                  class="step-b"
+                  type="button"
+                  :disabled="store.state.busy || activeStageObj.y >= DPI_MAX"
+                  aria-label="Y +50"
+                  @click="store.stepActiveDpi(DPI_STEP, 'y')"
+                >+</button>
+              </div>
             </div>
           </div>
         </div>
@@ -828,7 +983,7 @@ const saveMeta = computed(() => {
 /* Right Open Editorial Swiss Grid */
 .work-grid {
   display: grid;
-  grid-template-rows: 184px minmax(244px, 1fr) minmax(236px, 1fr);
+  grid-template-rows: minmax(184px, auto) minmax(244px, 1fr) minmax(236px, 1fr);
   min-height: 0;
   padding-bottom: 52px;
 }
@@ -866,6 +1021,11 @@ const saveMeta = computed(() => {
   line-height: 0.88;
   letter-spacing: 0.015em;
   color: var(--ink);
+}
+
+.dpi-huge.split {
+  font-size: 26px;
+  line-height: 1;
 }
 
 .dpi-u {
@@ -919,6 +1079,12 @@ const saveMeta = computed(() => {
   color: var(--ink-2);
 }
 
+.st-v.split {
+  font-size: 9.5px;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+
 .st-cell.active .st-v {
   color: var(--ink);
   font-weight: 700;
@@ -944,6 +1110,108 @@ const saveMeta = computed(() => {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  gap: 10px;
+}
+
+.dpi-head-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.xy-toggle {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.xy-toggle:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.xy-toggle.active {
+  border-color: var(--cobalt);
+  background: var(--cobalt);
+  color: #ffffff;
+}
+
+.xy-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.xy-axis-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+}
+
+.xy-axis-tag {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  letter-spacing: 0.06em;
+}
+
+.xy-axis-tag.axis-x {
+  color: var(--cobalt);
+}
+
+.xy-axis-tag.axis-y {
+  color: var(--ink-2);
+}
+
+.xy-slider-col {
+  padding-top: 9px;
+}
+
+.ruler-scale.compact {
+  height: 22px;
+  margin-top: 2px;
+}
+
+.ruler-scale.compact .r-mark {
+  padding-top: 7px;
+  font-size: 10px;
+}
+
+.step-box.compact .step-b {
+  width: 24px;
+  height: 22px;
+  font-size: 14px;
+}
+
+.step-box.compact .step-in {
+  width: 56px;
+  height: 22px;
+  font-size: 12px;
+}
+
+.swiss-range.range-y::-webkit-slider-thumb {
+  background: var(--ink-2);
+}
+
+.swiss-range.range-y::-moz-range-thumb {
+  background: var(--ink-2);
+}
+
+.r-mark.mark-y.active {
+  color: var(--ink);
+}
+
+.r-mark.mark-y.active::before {
+  background: var(--ink);
 }
 
 .step-box {
@@ -1105,7 +1373,8 @@ const saveMeta = computed(() => {
 
 .swiss-seg {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
 }

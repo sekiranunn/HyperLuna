@@ -41,6 +41,11 @@ test('dynamic errors translate nested setting names and preserve diagnostic code
     'Some settings may have taken effect: Invalid value for Button scan rate. Reload to check the current values.'
   );
   assert.equal(translate('寄存器 18:7A：8A → 88', 'EN'), 'Register 18:7A: 8A → 88');
+  assert.equal(translate('复制配置 1 到配置 2', 'EN'), 'Copy Profile 1 to Profile 2');
+  assert.equal(translate('已将配置 1 复制到 3 个槽位。', 'JPN'), 'プロファイル 1 を 3 個のスロットに複製しました。');
+  assert.equal(translate('已导入并保存 4 组配置。', 'EN'), 'Imported and saved 4 profile(s).');
+  assert.equal(translate('12 项变更', 'EN'), '12 changes');
+  assert.equal(translate('独立 X/Y', 'JPN'), 'X/Y 独立');
   for (const value of ['ABLODLOCKDB', '14k（13.8k fps）', '0x6000', 'motion_irq_count']) {
     assert.equal(translate(value, 'JPN'), value);
   }

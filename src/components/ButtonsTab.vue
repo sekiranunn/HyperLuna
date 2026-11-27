@@ -1,5 +1,6 @@
 <script setup>
 import {computed, ref} from 'vue';
+import {parseDecimalInt} from '../../advanced/protocol.js';
 
 const props = defineProps({
   store: {type: Object, required: true}
@@ -152,6 +153,18 @@ const triggerModes = [
   {value: 0, label: '关闭'},
   {value: 2, label: '右键优先'}
 ];
+
+const isLandingDefault = computed(() => {
+  const d = props.store.state.draft;
+  return (d.landingMask ?? 0x03) === 0x03
+    && parseDecimalInt(d.landingHoldMs) === 28
+    && !d.airborneLockout
+    && parseDecimalInt(d.airborneFloorMs) === 8;
+});
+
+function isLandingKeyEnabled(id) {
+  return Boolean(((props.store.state.draft.landingMask ?? 0x03) & (1 << id)));
+}
 </script>
 
 <template>
@@ -278,7 +291,7 @@ const triggerModes = [
             <span :class="['latency-tag', 'tabular', scope.pre > 0 ? 'added' : 'zero']">
               <span :class="['sq-mark', scope.pre > 0 ? 'warn' : 'ok']"></span>
               <span>{{ store.t('按下延迟') }}</span>
-              <strong>{{ scope.pre > 0 ? `+${fmtMs(scope.pre)} ms` : store.t('零延迟') }}</strong>
+              <strong>{{ scope.pre > 0 ? `+${fmtMs(scope.pre)} ms` : '0 ms' }}</strong>
             </span>
           </div>
 
@@ -375,6 +388,13 @@ const triggerModes = [
       <div class="policy-band">
         <div class="idx-head" style="margin-bottom: 14px;">
           <span class="idx-label"><em>03</em>{{ store.t('触发保护') }}</span>
+          <button
+            v-if="store.state.features.customLandingGuard && !isLandingDefault"
+            class="sbtn-rule"
+            type="button"
+            :disabled="store.state.busy"
+            @click="store.resetLandingDefaults"
+          >{{ store.t('恢复默认') }}</button>
         </div>
 
         <div class="policy-grid">
@@ -408,6 +428,94 @@ const triggerModes = [
                 :class="['gs-b', {active: store.state.legacy.scan_sequence === mode.value}]"
                 @click="store.state.legacy.scan_sequence = mode.value"
               >{{ store.t(mode.label) }}</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rev 52+ Lift & Landing Guard Parameters -->
+        <div
+          v-if="store.state.features.customLandingGuard"
+          :class="['lift-custom', {'muted-off': !store.state.draft.landingProtection}]"
+        >
+          <div class="lift-grid">
+            <label class="lift-cell">
+              <div class="timing-head">
+                <span class="timing-name">{{ store.t('落地锁定') }}</span>
+                <span class="tip-wrap">
+                  <span :class="['timing-short', {active: parseDecimalInt(store.state.draft.landingHoldMs) > 0}]">HOLD</span>
+                  <span class="swiss-tip" role="tooltip">{{ store.t('抬鼠落地后拦截作用按键的新按下动作（0 ms 不锁定）') }}</span>
+                </span>
+              </div>
+              <div class="timing-ctrl">
+                <input
+                  v-model="store.state.draft.landingHoldMs"
+                  class="sinput tabular timing-input"
+                  inputmode="numeric"
+                  :aria-label="store.t('落地锁定')"
+                  :disabled="store.state.busy"
+                />
+                <span class="unit">ms</span>
+              </div>
+            </label>
+
+            <div class="lift-cell">
+              <div class="timing-head">
+                <span class="timing-name">{{ store.t('空中防误触') }}</span>
+                <div class="lift-mode" role="group" :aria-label="store.t('空中防误触')">
+                  <span class="tip-wrap">
+                    <button
+                      type="button"
+                      :disabled="store.state.busy"
+                      :aria-pressed="!store.state.draft.airborneLockout"
+                      :class="['lift-mode-b', {active: !store.state.draft.airborneLockout}]"
+                      @click="store.state.draft.airborneLockout = false"
+                    >{{ store.t('滤波') }}</button>
+                    <span class="swiss-tip" role="tooltip">{{ store.t('抬起悬空时对作用按键施加最低按下滤波（0 ms 不追加滤波）') }}</span>
+                  </span>
+                  <span class="tip-wrap">
+                    <button
+                      type="button"
+                      :disabled="store.state.busy"
+                      :aria-pressed="Boolean(store.state.draft.airborneLockout)"
+                      :class="['lift-mode-b', {active: store.state.draft.airborneLockout}]"
+                      @click="store.state.draft.airborneLockout = true"
+                    >{{ store.t('禁用') }}</button>
+                    <span class="swiss-tip" role="tooltip">{{ store.t('抬起悬空时拦截作用按键的新按下动作，已按住的拖拽松开不受影响') }}</span>
+                  </span>
+                </div>
+              </div>
+              <div v-if="!store.state.draft.airborneLockout" class="timing-ctrl">
+                <input
+                  v-model="store.state.draft.airborneFloorMs"
+                  class="sinput tabular timing-input"
+                  inputmode="numeric"
+                  :aria-label="store.t('空中防误触')"
+                  :disabled="store.state.busy"
+                />
+                <span class="unit">ms</span>
+              </div>
+              <div v-else class="lift-lockout-line">
+                <span class="sq-mark warn"></span>
+                <span>{{ store.t('悬空禁用新触发') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="lift-keys-band">
+            <span class="timing-name">{{ store.t('作用按键') }}</span>
+            <div class="lift-keys-grid" role="group" :aria-label="store.t('作用按键')">
+              <button
+                v-for="btn in store.state.buttons"
+                :key="btn.id"
+                type="button"
+                :aria-pressed="isLandingKeyEnabled(btn.id)"
+                :disabled="store.state.busy"
+                :class="['lift-key-btn', {on: isLandingKeyEnabled(btn.id)}]"
+                @click="store.toggleLandingKey(btn.id)"
+              >
+                <span class="bin-sq"></span>
+                <span>{{ store.t(btn.label) }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1005,6 +1113,158 @@ const triggerModes = [
   color: var(--inv-ink);
 }
 
+/* Rev 52+ Lift & Landing Guard Parameters */
+.lift-custom {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: opacity 0.14s ease;
+}
+
+.lift-custom.muted-off {
+  opacity: 0.48;
+}
+
+.lift-custom.muted-off:hover,
+.lift-custom.muted-off:focus-within {
+  opacity: 1;
+}
+
+.lift-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+  align-items: start;
+}
+
+.lift-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lift-cell .timing-short.active {
+  color: var(--cobalt);
+}
+
+.lift-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.swiss-tip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 7px);
+  z-index: 30;
+  width: max-content;
+  max-width: 230px;
+  padding: 6px 9px;
+  background: var(--inv-bg);
+  color: var(--inv-ink);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.tip-wrap:hover .swiss-tip,
+.tip-wrap:focus-within .swiss-tip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.lift-mode-b {
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+  transition: color 0.1s ease, border-color 0.1s ease;
+}
+
+.lift-mode-b:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.lift-mode-b.active {
+  color: var(--cobalt);
+  border-bottom-color: var(--cobalt);
+}
+
+.lift-lockout-line {
+  height: 32px;
+  padding: 0 8px;
+  border-bottom: 1.5px solid var(--rule-strong);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.lift-keys-band {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lift-keys-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lift-key-btn {
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-top: 1.5px solid var(--rule-strong);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.lift-key-btn:hover:not(:disabled) {
+  background: var(--paper-tint);
+  color: var(--ink);
+}
+
+.lift-key-btn.on {
+  border-top: 2.5px solid var(--cobalt);
+  background: var(--cobalt-soft);
+  color: var(--ink);
+}
+
+.lift-key-btn.on .bin-sq {
+  border-color: var(--cobalt);
+  background: var(--cobalt);
+}
+
 @media (max-width: 1100px) {
   .swiss-buttons {
     grid-template-columns: 1fr;
@@ -1014,7 +1274,8 @@ const triggerModes = [
     border-bottom: 1px solid var(--rule);
     padding-bottom: 0;
   }
-  .policy-grid {
+  .policy-grid,
+  .lift-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1027,6 +1288,9 @@ const triggerModes = [
     border-right: 0;
   }
   .scope-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lift-keys-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

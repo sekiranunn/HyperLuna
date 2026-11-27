@@ -19,11 +19,16 @@ export function normalize(raw) {
   if (bytes.length < 6 || bytes[3] > 58 || bytes.length < 6 + bytes[3]) throw Error('HID 响应不完整');
   return bytes.slice(0, 6 + bytes[3]);
 }
-const echoLength = {1: 1, 2: 17, 3: 1, 4: 1, 6: 3, 7: 2, 8: 2, 9: 10};
-const replyMinimum = {0: 17, 1: 27, 2: 27, 3: 27, 4: 11, 5: 11, 6: 13, 7: 13, 8: 20, 9: 20, 10:18, 11:18};
+const echoLength = {1: 1, 2: 17, 3: 1, 4: 1, 6: 3, 7: 2, 8: 2, 9: 10, 12: 1};
+const replyMinimum = {0: 17, 1: 27, 2: 27, 3: 27, 4: 11, 5: 11, 6: 13, 7: 13, 8: 20, 9: 20, 10:18, 11:18, 12: 11};
 export function matches(reply, command, payload, group = 1) {
   if (reply.length < 6 || reply[4] !== group || reply[5] !== command || ![0xa1, 0xa2, 0xa3].includes(reply[0])) return false;
   if (command !== 0x7e) {
+    if (reply[2] === 1 && group === 0 && command === 0x85 && reply[0] === 0xa1) {
+      const sub = payload.length ? payload[0] : 0;
+      if (sub === 0 || sub === 2) return reply.length >= 62 && reply[6] === 0x41 && reply[7] === 0x46;
+      if (sub === 1 || sub === 3) return reply.length >= 36 && reply[6] === 0x4c && reply[7] === 0x51;
+    }
     if (!(group === 0 && [0x81, 0x83, 0x85].includes(command)) && payload.length && reply[6] !== payload[0]) return false;
     return true;
   }
@@ -43,7 +48,8 @@ export class RequestTimeout extends Error {
 }
 function readonly(command, data, group) {
   if (group === 1 && command === 0x7e) return [0, 1, 3, 7, 8, 10].includes(data[3]) || (data[3] === 5 && data[4] === 2);
-  return LEGACY_READS.has(`${group}:${command}`) || (group === 0 && [0x81, 0x85].includes(command));
+  if (group === 0 && command === 0x85) return data.length === 0 || data[0] === 0 || data[0] === 1;
+  return LEGACY_READS.has(`${group}:${command}`) || (group === 0 && command === 0x81);
 }
 const LEGACY_READS = new Set([
   '1:128', '1:129', '1:130', '1:132', '1:136', '1:137', '1:138', '1:139', '1:147', '1:148',
@@ -131,15 +137,74 @@ export function encodeTimings(value,features) {
   });
   return raw;
 }
+export const LANDING_HOLD_DEFAULT = 28, LANDING_HOLD_MIN = 0, LANDING_HOLD_MAX = 100;
+export const AIRBORNE_FLOOR_DEFAULT = 8, AIRBORNE_FLOOR_MIN = 0, AIRBORNE_FLOOR_MAX = 100, AIRBORNE_LOCKOUT_CODE = 255;
+export const LANDING_MASK_DEFAULT = 0x03;
+export function parseDecimalInt(raw) {
+  if (typeof raw === 'number') return Number.isInteger(raw) ? raw : NaN;
+  const text = String(raw ?? '').trim();
+  if (!/^\d+$/.test(text)) return NaN;
+  return Number(text);
+}
 export const equalButtons=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&[5,6].includes(a.length)&&a.length===b.length&&a.every((value,i)=>value.enabled===b[i].enabled&&TIMING_KEYS.every(key=>value[key]===b[i][key]));
 export const buttonMask=raw=>(raw[5]&128)?raw[5]&31:raw[4]?31:0;
+function isValidRawLandingGuard(raw) {
+  const flags = raw[14], hold = raw[15], air = raw[2];
+  if (raw[1] !== 0 || raw[3] !== 0) return false;
+  if (!(flags & 0x02) && (flags & 0x7c)) return false;
+  if (!(flags & 0x80)) return hold === 0 && air === 0;
+  return hold <= LANDING_HOLD_MAX && (air <= AIRBORNE_FLOOR_MAX || air === AIRBORNE_LOCKOUT_CODE);
+}
+export function validateRawLandingGuard(raw) {
+  if (raw.length !== 16) throw Error('配置长度必须为 16 字节');
+  const flags = raw[14], hold = raw[15], air = raw[2];
+  if (raw[1] !== 0 || raw[3] !== 0) throw Error('无效的抬鼠复位防误触设置');
+  if (!(flags & 0x02) && (flags & 0x7c)) throw Error('无效的抬鼠复位防误触设置');
+  if (!(flags & 0x80)) {
+    if (hold !== 0 || air !== 0) throw Error('无效的抬鼠复位防误触设置');
+  } else {
+    if (hold > LANDING_HOLD_MAX) throw Error('落地锁定时长须为 0–100 ms 的整数');
+    if (air > AIRBORNE_FLOOR_MAX && air !== AIRBORNE_LOCKOUT_CODE) throw Error('空中滤波下限须为 0–100 ms 的整数');
+  }
+}
+export function validateRawProfile(raw, fpsCount = 34, features) {
+  if (!raw || raw.length !== 16 || !Array.from(raw).every(b => Number.isInteger(b) && b >= 0 && b <= 255)) {
+    throw Error('配置长度必须为 16 字节');
+  }
+  if (raw[0] > fpsCount) throw Error('无效的 FPS 预设');
+  if (raw[4] > 1) throw Error('无效的按键开关');
+  if (features?.independentDebounce && raw[5] !== 0 && (!(raw[5] & 0x80) || (raw[5] & 0x60))) {
+    throw Error('无效的按键开关');
+  }
+  const view = new DataView(Uint8Array.from(raw).buffer);
+  for (let i = 0; i < 4; i++) {
+    if (view.getUint16(6 + i * 2, true) > 1000) throw Error('消抖范围为 0–100 ms，步进 0.1 ms');
+  }
+  if (features?.customLandingGuard) {
+    validateRawLandingGuard(raw);
+  } else if (features?.landingPolicy) {
+    if (raw[1] !== 0 || raw[2] !== 0 || raw[3] !== 0 || raw[14] > 1 || raw[15] !== 0) {
+      throw Error('无效的抬鼠复位防误触设置');
+    }
+  }
+}
 export function decodeProfile(raw) {
   if (raw.length !== 16) throw Error('配置长度必须为 16 字节');
   const view = new DataView(Uint8Array.from(raw).buffer);
-  return {fps: raw[0], debounce: raw[4] !== 0,
+  const flags = raw[14];
+  const customMask = Boolean(flags & 0x02);
+  const customTiming = Boolean(flags & 0x80);
+  const airborneLockout = customTiming && raw[2] === AIRBORNE_LOCKOUT_CODE;
+  return {
+    fps: raw[0], debounce: raw[4] !== 0,
     pre: view.getUint16(6, true) / 10, post: view.getUint16(8, true) / 10,
     plock: view.getUint16(10, true) / 10, relock: view.getUint16(12, true) / 10,
-    landingProtection:!(raw[14]&1)};
+    landingProtection: !(flags & 1),
+    landingMask: customMask ? ((flags >> 2) & 0x1f) : LANDING_MASK_DEFAULT,
+    landingHoldMs: customTiming ? raw[15] : LANDING_HOLD_DEFAULT,
+    airborneFloorMs: customTiming ? (airborneLockout ? AIRBORNE_FLOOR_DEFAULT : raw[2]) : AIRBORNE_FLOOR_DEFAULT,
+    airborneLockout
+  };
 }
 export function encodeProfile(original, value, fpsCount = 34, features) {
   if (original.length !== 16) throw Error('请先读取鼠标配置');
@@ -151,7 +216,39 @@ export function encodeProfile(original, value, fpsCount = 34, features) {
     const mask=value.buttons.reduce((bits,button,key)=>bits|(Number(button.enabled)<<key),0);
     raw[4]=Number(mask!==0);raw[5]=128|mask;
   }
-  if(features?.landingPolicy){
+  if(features?.customLandingGuard){
+    if(typeof value.landingProtection!=='boolean')throw Error('无效的抬鼠复位防误触设置');
+    const mask=value.landingMask===undefined?LANDING_MASK_DEFAULT:value.landingMask;
+    if(!Number.isInteger(mask)||mask<0||mask>31)throw Error('无效的防误触按键范围');
+    const hold=value.landingHoldMs===undefined?LANDING_HOLD_DEFAULT:value.landingHoldMs;
+    if(!Number.isInteger(hold)||hold<LANDING_HOLD_MIN||hold>LANDING_HOLD_MAX)throw Error('落地锁定时长须为 0–100 ms 的整数');
+    if(value.airborneLockout!==undefined&&typeof value.airborneLockout!=='boolean')throw Error('无效的抬鼠复位防误触设置');
+    const lockout=Boolean(value.airborneLockout);
+    const floor=value.airborneFloorMs===undefined?AIRBORNE_FLOOR_DEFAULT:value.airborneFloorMs;
+    if(!lockout&&(!Number.isInteger(floor)||floor<AIRBORNE_FLOOR_MIN||floor>AIRBORNE_FLOOR_MAX))throw Error('空中滤波下限须为 0–100 ms 的整数');
+    const origValid = isValidRawLandingGuard(original);
+    const prev = origValid ? decodeProfile(original) : null;
+    const maskUnchanged = origValid && mask === prev.landingMask;
+    const timingUnchanged = origValid && hold === prev.landingHoldMs && lockout === prev.airborneLockout
+      && (lockout || floor === prev.airborneFloorMs);
+    const maskBits = maskUnchanged
+      ? (original[14] & 0x7e)
+      : (mask !== LANDING_MASK_DEFAULT ? (0x02 | (mask << 2)) : 0);
+    let timingBit, outHold, outAir;
+    if (timingUnchanged) {
+      timingBit = original[14] & 0x80;
+      outHold = original[15];
+      outAir = original[2];
+    } else {
+      const useCustomTiming = lockout || hold !== LANDING_HOLD_DEFAULT || floor !== AIRBORNE_FLOOR_DEFAULT;
+      timingBit = useCustomTiming ? 0x80 : 0;
+      outHold = useCustomTiming ? hold : 0;
+      outAir = useCustomTiming ? (lockout ? AIRBORNE_LOCKOUT_CODE : floor) : 0;
+    }
+    raw[14] = Number(!value.landingProtection) | maskBits | timingBit;
+    raw[15] = outHold;
+    raw[2] = outAir;
+  }else if(features?.landingPolicy){
     if(typeof value.landingProtection!=='boolean')throw Error('无效的抬鼠复位防误触设置');
     raw[14]=Number(!value.landingProtection);raw[15]=0;
   }
@@ -219,8 +316,63 @@ export function decodeReceiverAfh(reply) {
   const spectrum = Array.from({length: 38}, (_, i) => ({mhz: 2404 + 2 * i, dbm: -bytes[24 + i]}));
   return {
     version: bytes[8],
-    flags: {raw: rawFlags, scanValid: Boolean(rawFlags & 1), hwTimeout: Boolean(rawFlags & 2), lastWasQuick: Boolean(rawFlags & 4)},
+    flags: {
+      raw: rawFlags,
+      scanValid: Boolean(rawFlags & 1),
+      hwTimeout: Boolean(rawFlags & 2),
+      lastWasQuick: Boolean(rawFlags & 4),
+      manualScan: Boolean(rawFlags & 8),
+      v4Capable: Boolean(rawFlags & 16),
+      linkActive: Boolean(rawFlags & 32)
+    },
+    linkActive: Boolean(rawFlags & 32),
     chTable, searchCh, activeCh, chIdx, lastPasses, scanCount, hopCount, spectrum
+  };
+}
+export function decodeReceiverLinkQuality(reply) {
+  const bytes = reply instanceof Uint8Array ? reply : Uint8Array.from(reply);
+  if (bytes.length < 36 || bytes[6] !== 0x4c || bytes[7] !== 0x51 || bytes[8] !== 1) {
+    throw Error('无效的接收器链路质量响应');
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const wireFlags = bytes[9];
+  const activeCh = 2400 + bytes[10];
+  const chIdx = bytes[11];
+  const lastPasses = bytes[13];
+  const scanCount = view.getUint16(14, true);
+  const hopCount = view.getUint16(16, true);
+  const crcErrCount = view.getUint16(20, true);
+  const rxOkCount = view.getUint32(22, true);
+  const emaQ4 = view.getUint16(26, true);
+  const lastRaw = bytes[28];
+  const bestRaw = bytes[29];
+  const worstRaw = bytes[30];
+  const slotDbm = Array.from({length: 5}, (_, i) => (bytes[31 + i] ? -bytes[31 + i] : null));
+  return {
+    version: bytes[8],
+    flags: {
+      raw: wireFlags,
+      scanValid: Boolean(wireFlags & 1),
+      hwTimeout: Boolean(wireFlags & 2),
+      lastWasQuick: Boolean(wireFlags & 4),
+      manualScan: Boolean(wireFlags & 8),
+      v4Capable: Boolean(wireFlags & 16),
+      linkActive: Boolean(wireFlags & 32)
+    },
+    linkActive: Boolean(wireFlags & 32),
+    activeCh,
+    chIdx,
+    lastPasses,
+    scanCount,
+    hopCount,
+    crcErrCount,
+    rxOkCount,
+    emaQ4,
+    emaDbm: emaQ4 ? -Number((emaQ4 / 16).toFixed(1)) : null,
+    lastDbm: lastRaw ? -lastRaw : null,
+    bestDbm: bestRaw ? -bestRaw : null,
+    worstDbm: worstRaw ? -worstRaw : null,
+    slotDbm
   };
 }
 
@@ -291,6 +443,44 @@ export class LunaClient {
       if ([0xa2, 0xa3].includes(error.status) || error instanceof RequestTimeout) return null;
       throw error;
     }
+  }
+  async receiverLinkQuality() {
+    if (this.transport.target !== 2) return null;
+    try {
+      const r = await this.transport.exchange(0x85, [1], 0, 1);
+      return decodeReceiverLinkQuality(r);
+    } catch (error) {
+      if ([0xa2, 0xa3].includes(error.status) || error instanceof RequestTimeout) return null;
+      throw error;
+    }
+  }
+  async rescanReceiverAfh() {
+    if (this.transport.target !== 2) throw Error('当前为有线 USB，请连接 2.4G 接收器。');
+    try {
+      const r = await this.transport.exchange(0x85, [2], 0, 1);
+      return decodeReceiverAfh(r);
+    } catch (error) {
+      if (error.status === 0xa2) throw Error('硬件扫频超时，已保留原频谱与无线连接，请稍后重试');
+      if (error.status === 0xa3) throw Error('当前接收器不支持手动扫频（需 Receiver V4）');
+      throw error;
+    }
+  }
+  async resetReceiverLinkCounters() {
+    if (this.transport.target !== 2) throw Error('当前为有线 USB，请连接 2.4G 接收器。');
+    try {
+      const r = await this.transport.exchange(0x85, [3], 0, 1);
+      return decodeReceiverLinkQuality(r);
+    } catch (error) {
+      if (error.status === 0xa3) throw Error('当前接收器不支持链路计数清零（需 Receiver V4）');
+      throw error;
+    }
+  }
+  async requestMouseQuietWindow(durationMs = 500) {
+    if (!this.features?.quietWindow) throw Error('当前鼠标固件不支持静默扫频窗口（需 Rev 51）');
+    const units = Math.round(Number(durationMs) / 10);
+    if (!Number.isInteger(units) || units < 5 || units > 50) throw Error('静默窗口须为 50–500 ms');
+    const r = await this.extension(12, units);
+    return r[10] * 10;
   }
   async getDpi(slot) {
     this.slot(slot);
@@ -433,8 +623,8 @@ export class LunaClient {
   }
   async putProfile(slot, raw) {
     this.slot(slot);
-    // Validate the editable fields, but keep all three reserved bytes verbatim.
-    encodeProfile(raw, decodeProfile(raw), this.definitions.fps_presets.length);
+    // Validate the actual raw bytes before sending so malformed fields never reach the transport.
+    validateRawProfile(raw, this.definitions.fps_presets.length, this.features);
     validateFeatures(decodeProfile(raw),this.features);
     let timeout = false;
     try { await this.extension(2, slot, ...raw); } catch (e) { if (!(e instanceof RequestTimeout)) throw e; timeout = true; }

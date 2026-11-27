@@ -9,7 +9,15 @@ import {
   createPollingTracker,
   pushPollingEvents,
   analyzePollingSamples,
-  analyzeSwitchEvents
+  analyzeSwitchEvents,
+  normalizeDoubleClickMs,
+  createSwitchBench,
+  pushSwitchDown,
+  pushSwitchUp,
+  pushWheelTick,
+  resetSwitchTransient,
+  recomputeSwitchBench,
+  snapshotSwitchBench
 } from '../src/lib/calibration.js';
 import {createDriverStore} from '../src/store/driver.js';
 import {DemoDevice} from '../advanced/demo.js';
@@ -182,6 +190,112 @@ test('analyzeSwitchEvents flags real <25 ms double-click chatter and <8 ms micro
   assert.equal(res.byButton[2].presses, 2);
   assert.equal(res.byButton[2].chatterCount, 0);
   assert.equal(res.byButton[2].minGapMs, 130);
+
+  // Codex P3-9: Boundary values just under 25 ms / 8 ms must NOT round up to 25 / 8 when flagged!
+  const edge = analyzeSwitchEvents([
+    {button: 0, type: 'down', t: 100},
+    {button: 0, type: 'up', t: 107.96},
+    {button: 0, type: 'down', t: 132.92},
+    {button: 0, type: 'up', t: 180}
+  ], {chatterMs: 25, minHoldMs: 8});
+  assert.equal(edge.byButton[0].microHoldCount, 1);
+  assert.equal(edge.byButton[0].chatterCount, 1);
+  assert.ok(edge.byButton[0].minHoldMs < 8, `expected < 8, got ${edge.byButton[0].minHoldMs}`);
+  assert.ok(edge.byButton[0].minGapMs < 25, `expected < 25, got ${edge.byButton[0].minGapMs}`);
+});
+
+test('createSwitchBench supports unbounded counts, dual-criteria bounce/double detection, idle pause filtering, and wheel reverse glitches', () => {
+  assert.equal(normalizeDoubleClickMs('80'), 80);
+  assert.equal(normalizeDoubleClickMs('3'), 10);
+  assert.equal(normalizeDoubleClickMs('999'), 500);
+  assert.equal(normalizeDoubleClickMs('abc', 80), 80);
+
+  const bench = createSwitchBench({doubleClickMs: 80, chatterMs: 25, minHoldMs: 8});
+
+  // 1) 300 normal clicks (150 ms Down->Down, 50 ms hold, 100 ms Up->Down): never truncated or false-flagged
+  let t = 1000;
+  for (let i = 0; i < 300; i++) {
+    assert.equal(pushSwitchDown(bench, 0, t).isAnomaly, false);
+    // Duplicate down while held must be ignored
+    assert.equal(pushSwitchDown(bench, 0, t + 1).ignored, true);
+    assert.equal(pushSwitchUp(bench, 0, t + 50).isMicro, false);
+    t += 150;
+  }
+
+  // 2) Long idle pause (10 s) must NOT corrupt avgDownDownMs (~150 ms)
+  t += 10000;
+  pushSwitchDown(bench, 0, t);
+  // Long hold (300 ms) followed by 6 ms release bounce: Down->Down = 306 ms (>80) yet Up->Down = 6 ms (<25)!
+  pushSwitchUp(bench, 0, t + 300);
+  const longBounce = pushSwitchDown(bench, 0, t + 306);
+  assert.equal(longBounce.isChatter, true);
+  assert.equal(longBounce.isDouble, false);
+  assert.equal(longBounce.reason, 'bounce');
+  pushSwitchUp(bench, 0, t + 350);
+
+  // 3) Short-tap mechanical double-click (hold 30 ms, gap 32 ms -> Down->Down = 62 ms < 80 ms)
+  t += 1000;
+  pushSwitchDown(bench, 0, t);
+  pushSwitchUp(bench, 0, t + 30);
+  const slowDbl = pushSwitchDown(bench, 0, t + 62);
+  assert.equal(slowDbl.isDouble, true);
+  assert.equal(slowDbl.isChatter, false);
+  assert.equal(slowDbl.reason, 'double');
+  pushSwitchUp(bench, 0, t + 100);
+
+  // 4) Single bad press hitting BOTH Up->Down (5 ms) and Down->Down (43 ms) counts ONCE in doubleHits
+  const bothHit = pushSwitchDown(bench, 0, t + 105);
+  assert.equal(bothHit.isChatter, true);
+  assert.equal(bothHit.isDouble, true);
+  assert.equal(bothHit.reason, 'bounce');
+  // Micro-hold 4 ms on release
+  const micro = pushSwitchUp(bench, 0, t + 109);
+  assert.equal(micro.isMicro, true);
+
+  // 5) Transient reset on blur preserves accumulated stats
+  pushSwitchDown(bench, 2, t + 500);
+  resetSwitchTransient(bench);
+
+  // 6) Scroll wheel: normal down-then-up sequence has 0 glitches; rapid down->up->down sandwich flags reverse glitch
+  assert.equal(pushWheelTick(bench, 120, 5000).isReverse, false);
+  assert.equal(pushWheelTick(bench, 120, 5040).isReverse, false);
+  assert.equal(pushWheelTick(bench, -120, 5080).isReverse, false);
+  assert.equal(pushWheelTick(bench, -120, 5120).isReverse, false);
+  // Intentional change complete -> now inject real encoder bounce (down -> stray up -> down within 70 ms)
+  assert.equal(pushWheelTick(bench, 120, 6000).isReverse, false);
+  assert.equal(pushWheelTick(bench, -120, 6035).isReverse, false);
+  assert.equal(pushWheelTick(bench, 120, 6070).isReverse, true);
+
+  const snap = snapshotSwitchBench(bench);
+  assert.equal(snap.byButton[0].presses, 305);
+  assert.equal(snap.byButton[0].releases, 305);
+  assert.equal(snap.byButton[0].doubleHits, 3);
+  assert.equal(snap.byButton[0].chatterCount, 2);
+  assert.equal(snap.byButton[0].doubleClickCount, 2);
+  assert.equal(snap.byButton[0].microHoldCount, 1);
+  assert.ok(snap.byButton[0].avgDownDownMs > 140 && snap.byButton[0].avgDownDownMs < 160, `unexpected avg ${snap.byButton[0].avgDownDownMs}`);
+  assert.equal(snap.byButton[2].presses, 1);
+  assert.equal(snap.byButton[2].isPressed, false);
+  assert.equal(snap.wheel.down, 4);
+  assert.equal(snap.wheel.up, 3);
+  assert.equal(snap.wheel.reverseCount, 1);
+  // Active anomalies ordered most-recent first (reverse -> micro -> bounce -> double)
+  assert.deepEqual(snap.activeAnomalies, ['reverse', 'micro', 'bounce', 'double']);
+
+  // Live threshold re-evaluation: lowering threshold to 15 ms (bounce=15 ms) clears slow 62 ms double-click
+  // while keeping 5 ms / 6 ms bounces and 4 ms micro-hold intact
+  const stricter = recomputeSwitchBench(bench, {doubleClickMs: 15, chatterMs: 15});
+  assert.equal(stricter.byButton[0].presses, 305);
+  assert.equal(stricter.byButton[0].doubleHits, 2);
+  assert.equal(stricter.byButton[0].doubleClickCount, 0);
+  assert.equal(stricter.byButton[0].chatterCount, 2);
+  assert.equal(stricter.byButton[0].microHoldCount, 1);
+  assert.deepEqual(stricter.activeAnomalies, ['reverse', 'micro', 'bounce']);
+
+  // Raising threshold back to 80 ms restores the 62 ms double-click without losing any history
+  const restored = recomputeSwitchBench(bench, {doubleClickMs: 80, chatterMs: 25});
+  assert.equal(restored.byButton[0].doubleHits, 3);
+  assert.deepEqual(restored.activeAnomalies, ['reverse', 'micro', 'bounce', 'double']);
 });
 
 test('driver store readOpticalDiagnostics performs read-only op=7 queries and recognizes Rev 48/49/50', async () => {

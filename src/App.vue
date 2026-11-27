@@ -18,9 +18,9 @@ const store = createDriverStore(definitions, {acquireDeviceLock});
 const tabs = [
   {id: 'performance', num: '01', label: '性能与传感'},
   {id: 'buttons', num: '02', label: '按键与消抖'},
-  {id: 'registers', num: '03', label: '寄存器'},
-  {id: 'spectrum', num: '04', label: '2.4G 频谱'},
-  {id: 'calibrate', num: '05', label: '校准与诊断'}
+  {id: 'spectrum', num: '03', label: '2.4G 频谱'},
+  {id: 'calibrate', num: '04', label: '校准与诊断'},
+  {id: 'registers', num: '05', label: '寄存器'}
 ];
 
 const toastVisible = ref(false);

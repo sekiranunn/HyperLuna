@@ -1,13 +1,20 @@
 <script setup>
-import {computed, ref, onBeforeUnmount} from 'vue';
-import {RATES} from '../../advanced/protocol.js';
+import {computed, ref, watch, onBeforeUnmount} from 'vue';
+import {RATES, decodeProfile} from '../../advanced/protocol.js';
 import {
   computeGripAngle,
   computeTrueDpi,
   createPollingTracker,
   pushPollingEvents,
   analyzePollingSamples,
-  analyzeSwitchEvents
+  normalizeDoubleClickMs,
+  createSwitchBench,
+  pushSwitchDown,
+  pushSwitchUp,
+  pushWheelTick,
+  resetSwitchTransient,
+  recomputeSwitchBench,
+  snapshotSwitchBench
 } from '../lib/calibration.js';
 
 const props = defineProps({
@@ -522,9 +529,11 @@ function stopAllCaptures() {
   stopAngleCapture();
   stopDpiCapture();
   stopPollingCapture();
+  resetSwitchTransient(switchBench);
+  switchSnapshot.value = snapshotSwitchBench(switchBench);
 }
 
-// ================= 5. Switch Chatter Bench =================
+// ================= 5. Switch Chatter & Wheel Bench =================
 const SWITCH_BUTTONS = [
   {dom: 0, hw: 0, label: '左键'},
   {dom: 2, hw: 1, label: '右键'},
@@ -533,48 +542,184 @@ const SWITCH_BUTTONS = [
   {dom: 4, hw: 4, label: '前侧键'}
 ];
 
-// Realistic contact-bounce thresholds (15 ms = rapid-click safe, 25 ms = standard bounce, 40 ms = worn switch)
-const chatterThresholdMs = ref(25);
-const switchEvents = ref([]);
-const pressedDomButtons = ref(new Set());
+const DOUBLE_CLICK_PRESETS = [40, 60, 80, 100];
+const doubleClickInput = ref('80');
+const doubleClickMs = computed(() => normalizeDoubleClickMs(doubleClickInput.value, 80));
+const bounceMs = computed(() => Math.min(25, doubleClickMs.value));
 
-const switchAnalysis = computed(() =>
-  analyzeSwitchEvents(switchEvents.value, {chatterMs: chatterThresholdMs.value, minHoldMs: 8})
-);
+let switchBench = createSwitchBench({doubleClickMs: 80, chatterMs: 25, minHoldMs: 8});
+const switchSnapshot = ref(snapshotSwitchBench(switchBench));
+const buttonFlash = ref({});
+const wheelFlash = ref({up: false, down: false, reverse: false});
+const flashTimers = new Map();
+
+function setDoubleClickPreset(ms) {
+  doubleClickInput.value = String(ms);
+}
+
+function commitDoubleClickInput() {
+  doubleClickInput.value = String(doubleClickMs.value);
+}
+
+watch([doubleClickMs, bounceMs], ([dd, ud]) => {
+  switchSnapshot.value = recomputeSwitchBench(switchBench, {doubleClickMs: dd, chatterMs: ud});
+});
+
+function clearFlashTimers() {
+  for (const timer of flashTimers.values()) clearTimeout(timer);
+  flashTimers.clear();
+  buttonFlash.value = {};
+  wheelFlash.value = {up: false, down: false, reverse: false};
+}
+
+function triggerButtonFlash(dom, tone, durationMs) {
+  const cur = buttonFlash.value[dom];
+  if (cur === 'danger' && tone === 'tap') return;
+  const key = `btn:${dom}`;
+  if (flashTimers.has(key)) clearTimeout(flashTimers.get(key));
+  buttonFlash.value = {...buttonFlash.value, [dom]: tone};
+  flashTimers.set(key, setTimeout(() => {
+    flashTimers.delete(key);
+    const next = {...buttonFlash.value};
+    delete next[dom];
+    buttonFlash.value = next;
+  }, durationMs));
+}
+
+function triggerWheelFlash(field, durationMs) {
+  const key = `wheel:${field}`;
+  if (flashTimers.has(key)) clearTimeout(flashTimers.get(key));
+  wheelFlash.value = {...wheelFlash.value, [field]: true};
+  flashTimers.set(key, setTimeout(() => {
+    flashTimers.delete(key);
+    wheelFlash.value = {...wheelFlash.value, [field]: false};
+  }, durationMs));
+}
+
+function eventClockMs(event) {
+  const now = performance.now();
+  const ts = Number(event?.timeStamp);
+  if (Number.isFinite(ts) && ts > 0 && Math.abs(ts - now) < 5000) return ts;
+  return now;
+}
 
 const switchTotals = computed(() => {
   let clicks = 0;
-  let issues = 0;
-  for (const s of Object.values(switchAnalysis.value.byButton)) {
+  let doubles = 0;
+  let chatters = 0;
+  let micros = 0;
+  for (const s of Object.values(switchSnapshot.value.byButton)) {
     clicks += s.presses;
-    issues += s.chatterCount + s.microHoldCount;
+    doubles += s.doubleHits;
+    chatters += s.chatterCount;
+    micros += s.microHoldCount;
   }
-  return {clicks, issues};
+  const wheel = switchSnapshot.value.wheel;
+  const wheelTicks = (wheel?.up || 0) + (wheel?.down || 0);
+  const wheelReverses = wheel?.reverseCount || 0;
+  return {
+    clicks,
+    doubles,
+    chatters,
+    micros,
+    wheelTicks,
+    wheelReverses,
+    issues: doubles + micros + wheelReverses,
+    hasAny: clicks > 0 || wheelTicks > 0
+  };
 });
+
+const ANOMALY_HINTS = {
+  bounce: {tone: 'danger', key: '检测到松手回弹 · 可增大松开锁定 (RELOCK)'},
+  micro: {tone: 'warn', key: '检测到极短按住 · 可增大按下前滤波 (PRE) 或按下锁定 (PLOCK)'},
+  double: {tone: 'danger', key: '检测到连按双击 · 可检查微动或调大消抖锁定'},
+  reverse: {tone: 'danger', key: '检测到滚轮反向跳动 · 编码器可能存在回滚'}
+};
+
+const switchHints = computed(() => {
+  const active = switchSnapshot.value.activeAnomalies || [];
+  if (active.length) {
+    return active
+      .filter(reason => ANOMALY_HINTS[reason])
+      .map(reason => ({
+        reason,
+        tone: ANOMALY_HINTS[reason].tone,
+        text: props.store.t(ANOMALY_HINTS[reason].key)
+      }));
+  }
+  return [{
+    reason: 'clean',
+    tone: switchTotals.value.hasAny ? 'ok' : '',
+    text: props.store.t(switchTotals.value.hasAny ? '正常' : '等待点击')
+  }];
+});
+
+const switchRuleText = computed(() => (
+  props.store.t('异常判定：连按 < {dd} ms · 回弹 < {ud} ms · 极短 < 8 ms', {
+    dd: doubleClickMs.value,
+    ud: bounceMs.value
+  })
+));
+
+function buttonStats(dom) {
+  return switchSnapshot.value.byButton[dom] || null;
+}
+
+function fmtSwitchMs(val) {
+  if (val === null || val === undefined) return '—';
+  return `${val} ms`;
+}
 
 function onSwitchDown(event) {
   event.preventDefault();
   const b = event.button;
   if (!SWITCH_BUTTONS.some(s => s.dom === b)) return;
-  const next = new Set(pressedDomButtons.value);
-  next.add(b);
-  pressedDomButtons.value = next;
-  switchEvents.value = [...switchEvents.value, {button: b, type: 'down', t: performance.now()}].slice(-400);
+  const res = pushSwitchDown(switchBench, b, eventClockMs(event), {
+    doubleClickMs: doubleClickMs.value,
+    chatterMs: bounceMs.value
+  });
+  if (res.ignored) return;
+  switchSnapshot.value = snapshotSwitchBench(switchBench);
+  if (res.isAnomaly) {
+    triggerButtonFlash(b, 'danger', 350);
+  } else {
+    triggerButtonFlash(b, 'tap', 150);
+  }
 }
 
 function onSwitchUp(event) {
-  event.preventDefault();
   const b = event.button;
-  if (!SWITCH_BUTTONS.some(s => s.dom === b)) return;
-  const next = new Set(pressedDomButtons.value);
-  next.delete(b);
-  pressedDomButtons.value = next;
-  switchEvents.value = [...switchEvents.value, {button: b, type: 'up', t: performance.now()}].slice(-400);
+  if (activeTool.value === 'switches' && (b === 3 || b === 4) && event.cancelable) {
+    event.preventDefault();
+  }
+  const cur = switchBench.byButton[b];
+  if (!cur?.isPressed) return;
+  if (event.cancelable) event.preventDefault();
+  const res = pushSwitchUp(switchBench, b, eventClockMs(event));
+  switchSnapshot.value = snapshotSwitchBench(switchBench);
+  if (res.isMicro) {
+    triggerButtonFlash(b, 'warn', 350);
+  }
+}
+
+function onSwitchWheel(event) {
+  const res = pushWheelTick(switchBench, event.deltaY, eventClockMs(event));
+  if (res.ignored) return;
+  switchSnapshot.value = snapshotSwitchBench(switchBench);
+  triggerWheelFlash(res.dir === 'up' ? 'up' : 'down', 180);
+  if (res.isReverse) {
+    triggerWheelFlash('reverse', 380);
+  }
 }
 
 function clearSwitchLog() {
-  switchEvents.value = [];
-  pressedDomButtons.value = new Set();
+  switchBench = createSwitchBench({
+    doubleClickMs: doubleClickMs.value,
+    chatterMs: bounceMs.value,
+    minHoldMs: 8
+  });
+  switchSnapshot.value = snapshotSwitchBench(switchBench);
+  clearFlashTimers();
 }
 
 function buttonLabelByDom(dom) {
@@ -583,10 +728,20 @@ function buttonLabelByDom(dom) {
 }
 
 function debounceSummaryForHw(hw) {
-  const cfg = props.store.state.draft?.buttons?.[hw];
+  const base = props.store.state.base;
+  if (props.store.state.slot !== base?.active) {
+    return props.store.t('非当前槽');
+  }
+  const cfg = base?.buttons?.[hw];
   if (!cfg) return '—';
-  if (!cfg.enabled) return props.store.t('未启用');
-  return `${cfg.pre} / ${cfg.post} ms`;
+  const enabled = cfg.enabled !== undefined
+    ? cfg.enabled
+    : (base.raw?.length === 16 ? decodeProfile(base.raw).debounce : false);
+  if (!enabled) return props.store.t('未启用');
+  if (cfg.plock !== undefined && cfg.relock !== undefined) {
+    return `${cfg.pre}/${cfg.plock}/${cfg.post}/${cfg.relock} ms`;
+  }
+  return `${cfg.pre}/${cfg.post} ms`;
 }
 
 // Sidebar Tool Index with Live Summaries
@@ -629,8 +784,16 @@ const toolItems = computed(() => [
       ? props.store.t('{count} 异常', {count: switchTotals.value.issues})
       : switchTotals.value.clicks > 0
         ? props.store.t('{count} 次', {count: switchTotals.value.clicks})
-        : '—',
-    tone: switchTotals.value.issues > 0 ? 'danger' : switchTotals.value.clicks > 0 ? 'ok' : ''
+        : switchTotals.value.wheelTicks > 0
+          ? props.store.t('滚轮 {count} 格', {count: switchTotals.value.wheelTicks})
+          : '—',
+    tone: switchTotals.value.doubles > 0 || switchTotals.value.wheelReverses > 0
+      ? 'danger'
+      : switchTotals.value.micros > 0
+        ? 'warn'
+        : switchTotals.value.hasAny
+          ? 'ok'
+          : ''
   }
 ]);
 
@@ -647,10 +810,13 @@ function onWindowBlur() {
 }
 
 document.addEventListener('pointerlockchange', onPointerLockChange);
+window.addEventListener('mouseup', onSwitchUp);
 window.addEventListener('blur', onWindowBlur);
 onBeforeUnmount(() => {
   document.removeEventListener('pointerlockchange', onPointerLockChange);
+  window.removeEventListener('mouseup', onSwitchUp);
   window.removeEventListener('blur', onWindowBlur);
+  clearFlashTimers();
   stopAllCaptures();
 });
 </script>
@@ -1123,28 +1289,40 @@ onBeforeUnmount(() => {
         </div>
       </template>
 
-      <!-- ==================== 05. SWITCH CHATTER ==================== -->
+      <!-- ==================== 05. SWITCH CHATTER & WHEEL ==================== -->
       <template v-else>
         <div class="bench-head">
           <div>
-            <span class="idx-label"><em>05</em>5-KEY SWITCH BENCH</span>
+            <span class="idx-label"><em>05</em>5-KEY · WHEEL BENCH</span>
             <h2 class="bench-hero">{{ store.t('微动回弹') }}</h2>
           </div>
 
           <div class="head-acts">
             <div class="seg-inline tabular">
               <button
-                v-for="ms in [15, 25, 40]"
+                v-for="ms in DOUBLE_CLICK_PRESETS"
                 :key="ms"
                 type="button"
-                :class="['gs-b', {active: chatterThresholdMs === ms}]"
-                @click="chatterThresholdMs = ms"
-              >{{ ms }} ms</button>
+                :class="['gs-b', {active: doubleClickMs === ms}]"
+                @click="setDoubleClickPreset(ms)"
+              >{{ ms }}</button>
             </div>
+            <label class="sw-thresh-ctrl tabular">
+              <span class="idx-label">{{ store.t('双击阈值') }}</span>
+              <input
+                v-model="doubleClickInput"
+                class="sinput sw-thresh-input tabular"
+                inputmode="numeric"
+                :aria-label="store.t('双击阈值')"
+                @blur="commitDoubleClickInput"
+                @keydown.enter="commitDoubleClickInput"
+              />
+              <span class="sw-thresh-u">ms</span>
+            </label>
             <button
               class="sbtn-rule"
               type="button"
-              :disabled="!switchEvents.length"
+              :disabled="!switchTotals.hasAny"
               @click="clearSwitchLog"
             >{{ store.t('清空') }}</button>
           </div>
@@ -1153,77 +1331,149 @@ onBeforeUnmount(() => {
         <div
           class="switch-bench"
           @mousedown="onSwitchDown"
-          @mouseup="onSwitchUp"
+          @wheel.prevent="onSwitchWheel"
           @contextmenu.prevent
           @auxclick.prevent
         >
           <div class="bench-bar">
-            <span class="idx-label">{{ store.t('在此区域点击任意按键检测回弹（右键与侧键默认操作已屏蔽）') }}</span>
+            <span class="idx-label">{{ store.t('在此区域点击任意按键或滚动滚轮（右键与侧键默认操作已屏蔽）') }}</span>
+            <span class="bench-rule tabular">{{ switchRuleText }}</span>
           </div>
 
-          <table class="sw-table tabular">
-            <thead>
-              <tr>
-                <th>{{ store.t('按键') }}</th>
-                <th>{{ store.t('消抖策略') }}</th>
-                <th>{{ store.t('点击') }}</th>
-                <th>{{ store.t('最短间隔') }}</th>
-                <th>{{ store.t('最短按住') }}</th>
-                <th class="col-right">{{ store.t('状态') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="sw in SWITCH_BUTTONS"
-                :key="sw.dom"
-                :class="{
-                  pressed: pressedDomButtons.has(sw.dom),
-                  warn: (switchAnalysis.byButton[sw.dom]?.chatterCount || 0) > 0
-                }"
-              >
-                <td class="sw-name">{{ store.t(sw.label) }}</td>
-                <td class="muted">{{ debounceSummaryForHw(sw.hw) }}</td>
-                <td class="sw-num">{{ switchAnalysis.byButton[sw.dom]?.presses || 0 }}</td>
-                <td>{{ switchAnalysis.byButton[sw.dom]?.minGapMs !== null && switchAnalysis.byButton[sw.dom]?.minGapMs !== undefined ? `${switchAnalysis.byButton[sw.dom].minGapMs} ms` : '—' }}</td>
-                <td>{{ switchAnalysis.byButton[sw.dom]?.minHoldMs !== null && switchAnalysis.byButton[sw.dom]?.minHoldMs !== undefined ? `${switchAnalysis.byButton[sw.dom].minHoldMs} ms` : '—' }}</td>
-                <td class="col-right">
-                  <span class="status-inline">
-                    <span
-                      :class="[
-                        'sq-mark',
-                        (switchAnalysis.byButton[sw.dom]?.chatterCount || 0) > 0
-                          ? 'danger'
-                          : (switchAnalysis.byButton[sw.dom]?.presses || 0) > 0
-                            ? 'ok'
-                            : ''
-                      ]"
-                    ></span>
-                    <span :class="(switchAnalysis.byButton[sw.dom]?.chatterCount || 0) > 0 ? 'danger' : ''">
-                      {{
-                        (switchAnalysis.byButton[sw.dom]?.chatterCount || 0) > 0
-                          ? store.t('回弹 {count}', {count: switchAnalysis.byButton[sw.dom].chatterCount})
-                          : (switchAnalysis.byButton[sw.dom]?.presses || 0) > 0
-                            ? store.t('正常')
-                            : store.t('等待点击')
-                      }}
-                    </span>
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div v-if="switchAnalysis.recent.length" class="event-tape tabular">
-            <span
-              v-for="(item, idx) in switchAnalysis.recent.slice(0, 7)"
-              :key="idx"
-              :class="['tape-item', {suspect: item.suspect}]"
+          <!-- 5-Key Co-Edged Swiss Switch Matrix -->
+          <div class="sw-cards tabular">
+            <div
+              v-for="sw in SWITCH_BUTTONS"
+              :key="sw.dom"
+              :class="[
+                'sw-card',
+                {
+                  pressed: Boolean(buttonStats(sw.dom)?.isPressed),
+                  'flash-tap': buttonFlash[sw.dom] === 'tap',
+                  'flash-danger': buttonFlash[sw.dom] === 'danger',
+                  'flash-warn': buttonFlash[sw.dom] === 'warn',
+                  'has-danger': (buttonStats(sw.dom)?.doubleHits || 0) > 0,
+                  'has-warn': (buttonStats(sw.dom)?.doubleHits || 0) === 0 && (buttonStats(sw.dom)?.microHoldCount || 0) > 0
+                }
+              ]"
             >
-              <span :class="['sq-mark', item.suspect ? 'danger' : '']"></span>
-              <b>{{ buttonLabelByDom(item.button) }}</b>
-              <span v-if="item.reason === 'double'">{{ store.t('疑似双击') }} {{ item.gapMs }} ms</span>
+              <div class="sw-card-face">
+                <div class="sw-card-top">
+                  <span class="sw-card-name">{{ store.t(sw.label) }}</span>
+                  <span :class="['sw-card-state', {active: buttonStats(sw.dom)?.isPressed}]">
+                    {{ store.t(buttonStats(sw.dom)?.isPressed ? '按下' : '抬起') }}
+                  </span>
+                </div>
+
+                <div class="sw-hero-block">
+                  <div :class="['sw-hero-num', 'brand', {danger: (buttonStats(sw.dom)?.doubleHits || 0) > 0}]">
+                    {{ buttonStats(sw.dom)?.doubleHits || 0 }}
+                  </div>
+                  <div class="sw-hero-cap">
+                    <span>{{ store.t('双击 / 回弹') }}</span>
+                    <span v-if="(buttonStats(sw.dom)?.microHoldCount || 0) > 0" class="sw-micro-tag warn">
+                      · {{ store.t('极短 {count}', {count: buttonStats(sw.dom).microHoldCount}) }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="sw-du-row">
+                  <div class="sw-du-item">
+                    <span>{{ store.t('按下') }}</span>
+                    <b>{{ buttonStats(sw.dom)?.presses || 0 }}</b>
+                  </div>
+                  <div class="sw-du-item">
+                    <span>{{ store.t('抬起') }}</span>
+                    <b :class="{warn: !buttonStats(sw.dom)?.isPressed && (buttonStats(sw.dom)?.presses || 0) !== (buttonStats(sw.dom)?.releases || 0)}">
+                      {{ buttonStats(sw.dom)?.releases || 0 }}
+                    </b>
+                  </div>
+                </div>
+
+                <div class="sw-metrics">
+                  <div class="sw-metric">
+                    <div class="sw-m-row">
+                      <span class="sw-m-k">{{ store.t('连按间隔') }}</span>
+                      <b class="sw-m-v">{{ fmtSwitchMs(buttonStats(sw.dom)?.lastDownDownMs) }}</b>
+                    </div>
+                    <div class="sw-m-sub">
+                      <span>{{ store.t('最小') }} {{ fmtSwitchMs(buttonStats(sw.dom)?.minDownDownMs) }}</span>
+                      <span>{{ store.t('平均') }} {{ fmtSwitchMs(buttonStats(sw.dom)?.avgDownDownMs) }}</span>
+                    </div>
+                  </div>
+
+                  <div class="sw-metric">
+                    <div class="sw-m-row">
+                      <span class="sw-m-k">{{ store.t('松手回弹') }}</span>
+                      <b :class="['sw-m-v', {danger: (buttonStats(sw.dom)?.chatterCount || 0) > 0}]">
+                        {{ fmtSwitchMs(buttonStats(sw.dom)?.minGapMs) }}
+                      </b>
+                    </div>
+                  </div>
+
+                  <div class="sw-metric">
+                    <div class="sw-m-row">
+                      <span class="sw-m-k">{{ store.t('按住时长') }}</span>
+                      <b class="sw-m-v">{{ fmtSwitchMs(buttonStats(sw.dom)?.lastHoldMs) }}</b>
+                    </div>
+                    <div class="sw-m-sub">
+                      <span :class="{warn: (buttonStats(sw.dom)?.microHoldCount || 0) > 0}">
+                        {{ store.t('最小') }} {{ fmtSwitchMs(buttonStats(sw.dom)?.minHoldMs) }}
+                      </span>
+                      <span>{{ store.t('平均') }} {{ fmtSwitchMs(buttonStats(sw.dom)?.avgHoldMs) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sw-card-foot">
+                  <span>{{ store.t('消抖策略') }}</span>
+                  <span class="sw-fw-val">{{ debounceSummaryForHw(sw.hw) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Co-Edged Scroll Wheel + Hardware Tuning Guidance Band -->
+          <div class="wheel-band tabular">
+            <div class="wheel-group">
+              <span class="idx-label">{{ store.t('滚轮') }}</span>
+              <div :class="['wheel-stat', {pulse: wheelFlash.up}]">
+                <span class="wheel-arrow">↑</span>
+                <span class="wheel-k">{{ store.t('上滚') }}</span>
+                <b class="wheel-v brand">{{ switchSnapshot.wheel.up }}</b>
+              </div>
+              <div :class="['wheel-stat', {pulse: wheelFlash.down}]">
+                <span class="wheel-arrow">↓</span>
+                <span class="wheel-k">{{ store.t('下滚') }}</span>
+                <b class="wheel-v brand">{{ switchSnapshot.wheel.down }}</b>
+              </div>
+              <div :class="['wheel-stat', 'wheel-rev', {danger: switchSnapshot.wheel.reverseCount > 0, pulse: wheelFlash.reverse}]">
+                <span class="wheel-k">{{ store.t('回滚异常') }}</span>
+                <b class="wheel-v brand">{{ switchSnapshot.wheel.reverseCount }}</b>
+              </div>
+            </div>
+
+            <div class="sw-hints">
+              <div v-for="hint in switchHints" :key="hint.reason" class="sw-hint">
+                <span :class="['sq-mark', hint.tone]"></span>
+                <span :class="hint.tone">{{ hint.text }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="switchSnapshot.recent.length" class="event-tape tabular">
+            <span
+              v-for="(item, idx) in switchSnapshot.recent.slice(0, 8)"
+              :key="idx"
+              :class="['tape-item', {suspect: item.reason === 'bounce' || item.reason === 'double' || item.reason === 'reverse', micro: item.reason === 'micro'}]"
+            >
+              <span :class="['sq-mark', (item.reason === 'bounce' || item.reason === 'double' || item.reason === 'reverse') ? 'danger' : item.reason === 'micro' ? 'warn' : '']"></span>
+              <b>{{ item.kind === 'wheel' ? store.t('滚轮') : buttonLabelByDom(item.button) }}</b>
+              <span v-if="item.reason === 'bounce'">{{ store.t('松手回弹') }} {{ item.gapMs }} ms</span>
+              <span v-else-if="item.reason === 'double'">{{ store.t('连按双击') }} {{ item.downDownMs }} ms</span>
               <span v-else-if="item.reason === 'micro'">{{ store.t('极短按住') }} {{ item.holdMs }} ms</span>
-              <span v-else>{{ item.gapMs !== null ? `${item.gapMs} ms` : store.t('首次按下') }}</span>
+              <span v-else-if="item.reason === 'reverse'">{{ store.t('滚轮回滚') }} {{ item.gapMs }} ms</span>
+              <span v-else>{{ item.downDownMs !== null ? `${item.downDownMs} ms` : store.t('首次按下') }}</span>
             </span>
           </div>
         </div>
@@ -1801,7 +2051,28 @@ onBeforeUnmount(() => {
   color: var(--ink);
 }
 
-/* Tool 05: Switch Table (Exact Parity with RegistersTab) */
+/* Tool 05: 5-Key + Wheel Swiss Switch Bench */
+.sw-thresh-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sw-thresh-input {
+  width: 54px;
+  height: 28px;
+  padding: 0 6px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sw-thresh-u {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
 .switch-bench {
   flex: 1;
   display: flex;
@@ -1810,58 +2081,282 @@ onBeforeUnmount(() => {
 }
 
 .bench-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
   padding: 12px 32px;
   border-bottom: 1px solid var(--rule);
   background: var(--paper-tint);
 }
 
-.sw-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
-}
-
-.sw-table th {
-  text-align: left;
-  padding: 10px 32px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+.bench-rule {
+  font-size: 11px;
+  font-weight: 500;
   color: var(--ink-3);
-  border-bottom: 1.5px solid var(--rule-strong);
   white-space: nowrap;
 }
 
-.sw-table td {
-  padding: 14px 32px;
+.sw-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border-bottom: 1px solid var(--rule);
-  color: var(--ink);
-  transition: background-color 0.08s ease;
 }
 
-.sw-table tbody tr.pressed td {
+.sw-card {
+  position: relative;
+  border-right: 1px solid var(--rule);
+  background: transparent;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.sw-card:last-child {
+  border-right: 0;
+}
+
+.sw-card.has-danger {
+  box-shadow: inset 0 2px 0 var(--danger);
+}
+
+.sw-card.has-warn {
+  box-shadow: inset 0 2px 0 var(--warn);
+}
+
+.sw-card.pressed,
+.sw-card.flash-tap {
+  background: var(--cobalt-soft);
+  box-shadow: inset 0 3px 0 var(--cobalt);
+}
+
+.sw-card.flash-warn {
+  box-shadow: inset 0 3px 0 var(--warn);
+}
+
+.sw-card.flash-danger {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  box-shadow: inset 0 3px 0 var(--danger);
+}
+
+.sw-card-face {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 16px 14px;
+  gap: 12px;
+  transition: transform 0.08s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.sw-card.pressed .sw-card-face,
+.sw-card.flash-tap .sw-card-face {
+  transform: translateY(2px);
+}
+
+.sw-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sw-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.sw-card-state {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-4);
+}
+
+.sw-card-state.active {
+  color: var(--cobalt);
+}
+
+.sw-hero-block {
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--rule);
+  text-align: center;
+}
+
+.sw-hero-num {
+  font-size: 34px;
+  line-height: 0.95;
+  color: var(--ink);
+}
+
+.sw-hero-cap {
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.sw-micro-tag {
+  font-weight: 600;
+}
+
+.sw-du-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.sw-du-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sw-du-item span {
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.sw-du-item b {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.sw-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.sw-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sw-m-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sw-m-k {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.sw-m-v {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.sw-m-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+
+.sw-card-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--ink-4);
+}
+
+.sw-fw-val {
+  color: var(--ink-3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wheel-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 32px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.wheel-group {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.wheel-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px;
+  border-left: 2px solid var(--rule-strong);
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.wheel-stat.pulse {
+  border-left-color: var(--cobalt);
   background: var(--cobalt-soft);
 }
 
-.sw-table tbody tr.pressed td:first-child {
-  box-shadow: inset 3px 0 0 var(--cobalt);
+.wheel-stat.wheel-rev.danger {
+  border-left-color: var(--danger);
 }
 
-.sw-table tbody tr.warn td:first-child {
-  box-shadow: inset 3px 0 0 var(--danger);
+.wheel-stat.wheel-rev.pulse {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
-.sw-name { font-weight: 700; }
-.sw-num { font-weight: 700; font-size: 14px; }
-.muted { color: var(--ink-3); }
-.col-right { text-align: right; white-space: nowrap; }
+.wheel-arrow {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cobalt);
+}
 
-.status-inline {
+.wheel-k {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.wheel-v {
+  font-size: 17px;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.wheel-stat.danger .wheel-v {
+  color: var(--danger);
+}
+
+.sw-hints {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.sw-hint {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-3);
 }
 
 .event-tape {
@@ -1882,10 +2377,23 @@ onBeforeUnmount(() => {
 }
 
 .tape-item.suspect { color: var(--danger); }
+.tape-item.micro { color: var(--warn); }
 
 .cobalt { color: var(--cobalt); }
 .ok { color: var(--ok); }
+.warn { color: var(--warn); }
 .danger { color: var(--danger); }
+
+@media (max-width: 1280px) {
+  .sw-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sw-card {
+    border-bottom: 1px solid var(--rule);
+  }
+  .sw-card:nth-child(3n) { border-right: 0; }
+  .sw-card:nth-last-child(-n+2) { border-bottom: 0; }
+}
 
 @media (max-width: 1100px) {
   .swiss-cal { grid-template-columns: 1fr; }
@@ -1905,5 +2413,15 @@ onBeforeUnmount(() => {
   .spec-strip-4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+@media (max-width: 720px) {
+  .sw-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sw-card:nth-child(3n) { border-right: 1px solid var(--rule); }
+  .sw-card:nth-child(2n) { border-right: 0; }
+  .sw-card:nth-last-child(-n+2) { border-bottom: 1px solid var(--rule); }
+  .sw-card:last-child { border-bottom: 0; }
 }
 </style>

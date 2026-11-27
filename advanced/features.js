@@ -1,15 +1,23 @@
 // Stable LF33 wire IDs; retired firmware IDs are deliberately not renumbered.
+// HyperLuna Rev 52+ ships a single unified mouse firmware (id=2, LUNA33_HYPERLUNA);
+// legacy id=6 (ABLOD) remains recognized so existing flashed mice stay connectable for stock settings.
 export const VARIANTS = Object.freeze([
-  {id:2,name:'ABLODDB',debounce:'fine',fps:'presets',stats:false,mask:41},
+  {id:2,name:'LUNA33_HYPERLUNA',debounce:'fine',fps:'presets',stats:false,mask:41},
   {id:6,name:'ABLOD',debounce:'none',fps:'none',stats:false,mask:1}
 ].map(Object.freeze));
 export const DEFAULT_FEATURES = VARIANTS[0];
-export const RUNTIME_STATUS_REVISIONS = Object.freeze([2,25,26,32,33,36,40,44,45,46,47,48,49,50]);
+export const RUNTIME_STATUS_REVISIONS = Object.freeze([2,25,26,32,33,36,40,44,45,46,47,48,49,50,51,52,53]);
 export function decodeFeatures(reply) {
   const feature=VARIANTS.find(value=>value.id===reply[17]);
   if(![19,21,23].includes(reply.length)||!feature||reply[18]!==feature.mask)throw Error('未识别的 LF33 固件功能版本');
   if(reply.length===23&&(!RUNTIME_STATUS_REVISIONS.includes(reply[21])||reply[22]!==7))throw Error('未识别的 LF33 固件功能版本');
-  const revision=reply.length===23?{implementationRevision:reply[21],runtimeStatus:true,landingPolicy:feature.debounce!=='none'}:{};
+  const revision=reply.length===23?{
+    implementationRevision:reply[21],
+    runtimeStatus:true,
+    landingPolicy:feature.debounce!=='none',
+    quietWindow:reply[21]>=51,
+    customLandingGuard:feature.debounce!=='none'&&reply[21]>=52
+  }:{};
   if(reply.length===21||reply.length===23&&(reply[19]!==0||reply[20]!==0)){
     if(!((reply[19]===1&&reply[20]===6)||(reply[19]===2&&reply[20]===5))||feature.debounce==='none')throw Error('未识别的逐键消抖版本');
     return {...feature,...revision,perButtonDebounce:true,independentDebounce:reply[19]===2,buttonCount:reply[20]};

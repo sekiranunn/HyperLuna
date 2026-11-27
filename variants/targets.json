@@ -1,7 +1,20 @@
 {
-  "version": 2,
+  "version": 3,
   "targets": [
-    {"id":"ABLODDB","builder":"five_button","recommended":true,"features":{"phase":"none","debounce":"fine","fps":"presets","stats":false}},
-    {"id":"ABLOD","builder":"core","features":{"phase":"none","debounce":"none","fps":"none","stats":false}}
+    {
+      "id": "LUNA33_HYPERLUNA",
+      "builder": "rev53",
+      "recommended": true,
+      "features": {
+        "phase": "none",
+        "debounce": "fine",
+        "fps": "presets",
+        "stats": false,
+        "per_button_debounce": true,
+        "independent_debounce": true,
+        "custom_landing_guard": true,
+        "wake_motion_preserve": true
+      }
+    }
   ]
 }

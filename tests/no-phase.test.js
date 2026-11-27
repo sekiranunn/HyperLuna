@@ -8,14 +8,15 @@ import {createDriverStore} from '../src/store/driver.js';
 
 const definitions = JSON.parse(readFileSync(new URL('../advanced/protocol-definitions.json', import.meta.url)));
 
-test('revisions 25..50 expose stable non-phase IDs and reject retired firmware', () => {
+test('revisions 25..53 expose stable non-phase IDs and reject retired firmware', () => {
   assert.deepEqual(VARIANTS.map(v => v.id), [2, 6]);
-  for (const revision of [25, 26, 32, 33, 36, 40, 44, 45, 46, 47, 48, 49, 50]) {
+  for (const revision of [25, 26, 32, 33, 36, 40, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53]) {
     for (const [id, mask, schema, keys] of [[2, 41, 2, 5], [6, 1, 0, 0]]) {
       const r = Uint8Array.from([161, 0, 0, 17, 1, 126, 76, 70, 1, 0, 76, 70, 51, 51, 1, 34, 32, id, mask, schema, keys, revision, 7]);
       const f = decodeFeatures(r);
       assert.equal(f.implementationRevision, revision);
       assert.equal(f.runtimeStatus, true);
+      assert.equal(f.customLandingGuard, id === 2 && revision >= 52);
       for (const key of ['phase', 'phaseDiagnostics', 'phaseAudit', 'phaseReference']) assert.equal(f[key], undefined);
       for (const [old, cap] of [[1, 43], [3, 213], [4, 133], [5, 5]]) {
         const retired = r.slice(); retired[17] = old; retired[18] = cap;
@@ -49,7 +50,7 @@ test('Vue 3 store has no removed controls; reads stay read-only and presets cann
     await store.attach(device);
     await store.readConfig();
     assert.equal(store.state.connected, true);
-    assert.equal(store.state.features.implementationRevision, 50);
+    assert.equal(store.state.features.implementationRevision, 53);
     for (const key of ['telemetry', 'counterRows', 'activity']) assert.equal(key in store.state, false);
     for (const method of ['readStatistics', 'toggleTelemetry', 'resetStatistics', 'exportLog']) assert.equal(store[method], undefined);
     assert.equal(definitions.counters.length, 32);

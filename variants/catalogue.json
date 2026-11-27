@@ -3,6 +3,9 @@
   "base": "0x6000",
   "bytes": 99008,
   "source_sha256": {
+    "lunafury-analysis/port/abs_stream_rev53_mouse_patch.py": "8d55e144125d22d176d96be4c17458d55fd06f7b834cf44467e30a9401e8bf2b",
+    "lunafury-analysis/port/abs_stream_rev52_mouse_patch.py": "ffffa7fa76a7fc263901882c6c4f6bd9fc808e5c2dbc8331036c9229df7c3bf5",
+    "lunafury-analysis/port/abs_stream_rev51_mouse_patch.py": "aaca217734f7f8aa95ecb44f2d857163b78053f610740128717993a935481d48",
     "lunafury-analysis/port/abs_stream_rev50_mouse_patch.py": "580a9e270432258b8511ca76aaa4ee94181199f157a963e008b3f31d16f23bf3",
     "lunafury-analysis/port/abs_stream_rev49_mouse_patch.py": "5a880059fda486bc71f5139068c7e3cb70f15ca28eae8793aeb80adc9d22f8f5",
     "lunafury-analysis/port/abs_stream_rev48_mouse_patch.py": "d1004537cc5af2a8ef121de218c372e81145e3029b7bf431a9424c7e14bc00a7",
@@ -12,6 +15,9 @@
     "lunafury-analysis/port/abs_stream_rev44_mouse_patch.py": "efa91fadd44481b3dc8959c0efc8bd7446e4b3e8047eab2ba965622c4e76278d",
     "lunafury-analysis/port/abs_stream_rev43_mouse_patch.py": "4a9bea710690b040be034bf650d4ffc949859c10b707f6952d5c8a4b23833f2f",
     "lunafury-analysis/port/abs_stream_mouse_patch.py": "b9bbe6227797d9f4956f2c9269f990a7776f3ce29b603791617964927efb4b06",
+    "lunafury-analysis/port/abs_stream_receiver_v6_patch.py": "797fcbbf21b309dd2193f508e1ff0147fc28598eb74a1e5cf36fa1910d45362a",
+    "lunafury-analysis/port/abs_stream_receiver_v5_patch.py": "3ed03a9b56fdb7af8301f9dfa52a7aedc1b0e067b7e06740276554b560a4894c",
+    "lunafury-analysis/port/abs_stream_receiver_v4_patch.py": "2be86a598c324414f7c3102905b2e5d3a5ddaff89507cd529a14109f13b47459",
     "lunafury-analysis/port/abs_stream_receiver_v3_patch.py": "85c91a144204b40d5e4a3551cee0b1bc2b80ca2c213db41e123ecd00b3320c88",
     "lunafury-analysis/port/abs_stream_receiver_v2_patch.py": "49e45fe422977dcb0bdb5d5420be9c1faf808c427f99ed6456e8e48caf7fbf62",
     "lunafury-analysis/port/abs_stream_receiver_patch.py": "fcd9579088067835d34d0564fef940498dd54e7b106c42f78112c9672aeaa272",
@@ -26,10 +32,10 @@
   },
   "images": [
     {
-      "id": "ABLODDB",
-      "name": "ABLODDB",
-      "file": "ABLODDB.bin",
-      "sha256": "ab2a94e759ce108d2aea022d1e06fbc22201c52f164a4a81161ce3d24a0e3ed6",
+      "id": "LUNA33_HYPERLUNA",
+      "name": "LUNA33_HYPERLUNA",
+      "file": "LUNA33_HYPERLUNA.bin",
+      "sha256": "03b4f1941a5a2294941e01552fa0975fa4d9c62624ada7e05f0767a9fa233573",
       "bytes": 99008,
       "recommended": true,
       "features": {
@@ -38,38 +44,20 @@
         "fps": "presets",
         "stats": false,
         "per_button_debounce": true,
-        "independent_debounce": true
+        "independent_debounce": true,
+        "quiet_window": true,
+        "custom_landing_guard": true,
+        "wake_motion_preserve": true
       },
       "variant_id": 2,
       "capabilities": 41,
       "hardware_tested": true,
-      "implementation_revision": 50,
+      "implementation_revision": 53,
       "config_storage_version": 4,
       "phase_removed": true,
       "paired_receiver": "LUNA33_820_ABS_STREAM.bin",
       "debounce_schema": 2,
       "button_count": 5
-    },
-    {
-      "id": "ABLOD",
-      "name": "ABLOD",
-      "file": "ABLOD.bin",
-      "sha256": "4ad4f75cf0fc44346550414545b31172c13a4b2faa08fec9536f650c402cee18",
-      "bytes": 99008,
-      "recommended": false,
-      "features": {
-        "phase": "none",
-        "debounce": "none",
-        "fps": "none",
-        "stats": false
-      },
-      "variant_id": 6,
-      "capabilities": 1,
-      "hardware_tested": false,
-      "implementation_revision": 50,
-      "config_storage_version": 1,
-      "phase_removed": true,
-      "paired_receiver": "LUNA33_820_ABS_STREAM.bin"
     }
   ],
   "receiver_images": [
@@ -81,10 +69,10 @@
       "dfu_target": 1,
       "base": "0x7000",
       "bytes": 28672,
-      "sha256": "3e7ec6d43fc0b7f78443c83e63c1975d28b9c3cee95a1f86aeb2e26a64e0df42",
+      "sha256": "3347c6a186d08eef016d6f3786baf441cfb9ada606f1572385de2f8d0123e8ab",
       "hardware_tested": true,
       "at405_modified": false,
-      "protocol": "ABS_STREAM_TIER1_RX_V3_RSSI_AFH"
+      "protocol": "ABS_STREAM_TIER1_RX_V6_DEFERRED_IDLE_AFH"
     }
   ]
 }

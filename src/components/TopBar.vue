@@ -1,4 +1,6 @@
 <script setup>
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+
 const props = defineProps({
   store: {type: Object, required: true},
   tabs: {type: Array, default: () => []}
@@ -10,12 +12,70 @@ const langs = [
   {code: 'JPN', label: 'JP'}
 ];
 
+const menuOpen = ref(false);
+const menuHost = ref(null);
+const profileFileInput = ref(null);
+
+const otherSlots = computed(() => [1, 2, 3, 4].filter(n => n !== props.store.state.slot));
+
 function firmwareStamp() {
   const f = props.store.state.features;
   if (!props.store.state.connected) return 'LUNA33';
   if (f.implementationRevision) return `R${f.implementationRevision}`;
   return f.name || 'LUNA33';
 }
+
+function closeMenu() {
+  menuOpen.value = false;
+}
+
+function toggleMenu() {
+  if (props.store.state.busy) return;
+  menuOpen.value = !menuOpen.value;
+}
+
+function onDocClick(event) {
+  if (menuOpen.value && menuHost.value && !menuHost.value.contains(event.target)) {
+    menuOpen.value = false;
+  }
+}
+
+function onKeyDown(event) {
+  if (event.key === 'Escape' && menuOpen.value) menuOpen.value = false;
+}
+
+function copyTo(targets) {
+  closeMenu();
+  props.store.prepareCopySlot(targets);
+}
+
+function exportProfiles() {
+  closeMenu();
+  props.store.exportAllProfiles();
+}
+
+function triggerProfileImport() {
+  closeMenu();
+  profileFileInput.value?.click();
+}
+
+function onProfileFileChange(event) {
+  props.store.prepareImportProfiles(event);
+}
+
+watch(() => props.store.state.connected, conn => {
+  if (!conn) menuOpen.value = false;
+});
+
+onMounted(() => {
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onKeyDown);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick);
+  document.removeEventListener('keydown', onKeyDown);
+});
 </script>
 
 <template>
@@ -50,17 +110,81 @@ function firmwareStamp() {
 
       <div class="mast-tools">
         <template v-if="store.state.connected">
-          <div class="slot-strip tabular" role="group" :aria-label="store.t('鼠标配置')">
-            <span class="slot-lbl">PROFILE</span>
-            <button
-              v-for="n in 4"
-              :key="n"
-              type="button"
-              :disabled="store.state.busy"
-              :title="store.t('配置 ' + n) + (store.state.base.active === n ? ' · ' + store.t('当前') : '')"
-              :class="['slot-btn', {active: store.state.slot === n, hw: store.state.base.active === n}]"
-              @click="store.changeSlot(n)"
-            >0{{ n }}</button>
+          <div ref="menuHost" class="profile-wrap">
+            <div class="slot-strip tabular" role="group" :aria-label="store.t('鼠标配置')">
+              <span class="slot-lbl">PROFILE</span>
+              <button
+                v-for="n in 4"
+                :key="n"
+                type="button"
+                :disabled="store.state.busy"
+                :title="store.t('配置 ' + n) + (store.state.base.active === n ? ' · ' + store.t('当前') : '')"
+                :class="['slot-btn', {active: store.state.slot === n, hw: store.state.base.active === n}]"
+                @click="store.changeSlot(n)"
+              >0{{ n }}</button>
+              <button
+                type="button"
+                :class="['slot-btn', 'slot-mgr-btn', {open: menuOpen}]"
+                :disabled="store.state.busy"
+                :aria-expanded="menuOpen"
+                :title="store.t('配置槽复制与备份')"
+                :aria-label="store.t('配置槽复制与备份')"
+                @click.stop="toggleMenu"
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+                  <polyline points="17 1 21 5 17 9" />
+                  <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                  <polyline points="7 23 3 19 7 15" />
+                  <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                </svg>
+              </button>
+            </div>
+
+            <div v-if="menuOpen" class="profile-pop" role="menu" :aria-label="store.t('配置槽复制与备份')">
+              <div class="pop-sec">
+                <div class="pop-kicker tabular">{{ store.t('复制配置 {slot} 到', {slot: store.state.slot}) }}</div>
+                <div class="pop-copy-row tabular">
+                  <button
+                    v-for="n in otherSlots"
+                    :key="n"
+                    type="button"
+                    class="pop-slot-btn"
+                    :disabled="store.state.busy || store.dirty.value"
+                    @click="copyTo([n])"
+                  >0{{ n }}</button>
+                  <button
+                    type="button"
+                    class="pop-slot-btn pop-all"
+                    :disabled="store.state.busy || store.dirty.value"
+                    @click="copyTo(otherSlots)"
+                  >{{ store.t('其余全部') }}</button>
+                </div>
+              </div>
+
+              <div class="pop-sec pop-io">
+                <div class="pop-kicker tabular">1–4 SLOTS JSON</div>
+                <div class="pop-io-row">
+                  <button
+                    type="button"
+                    class="pop-act-btn"
+                    :disabled="store.state.busy || store.dirty.value"
+                    @click="exportProfiles"
+                  >{{ store.t('导出全部 4 槽') }}</button>
+                  <button
+                    type="button"
+                    class="pop-act-btn"
+                    :disabled="store.state.busy || store.dirty.value"
+                    @click="triggerProfileImport"
+                  >{{ store.t('导入配置备份') }}</button>
+                </div>
+              </div>
+
+              <div v-if="store.dirty.value" class="pop-hint">
+                {{ store.t('请先应用或放弃当前未保存更改') }}
+              </div>
+            </div>
+
+            <input ref="profileFileInput" type="file" accept=".json" hidden @change="onProfileFileChange" />
           </div>
 
           <div class="tool-icons">
@@ -229,10 +353,121 @@ function firmwareStamp() {
   flex-shrink: 0;
 }
 
+.profile-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 .slot-strip {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+}
+
+.slot-mgr-btn {
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--rule);
+  padding-left: 4px;
+  width: 28px;
+}
+
+.slot-mgr-btn.open {
+  background: var(--inv-bg);
+  color: var(--inv-ink);
+}
+
+.profile-pop {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 60;
+  width: 248px;
+  background: var(--paper-elev);
+  border: 1px solid var(--rule-strong);
+  border-top: 2px solid var(--cobalt);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pop-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pop-io {
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.pop-kicker {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+
+.pop-copy-row {
+  display: grid;
+  grid-template-columns: repeat(3, 34px) 1fr;
+  gap: 4px;
+}
+
+.pop-slot-btn {
+  height: 26px;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.pop-slot-btn:hover:not(:disabled) {
+  border-color: var(--cobalt);
+  background: var(--cobalt);
+  color: #ffffff;
+}
+
+.pop-slot-btn.pop-all {
+  font-size: 10.5px;
+}
+
+.pop-io-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pop-act-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.pop-act-btn:hover:not(:disabled) {
+  border-color: var(--cobalt);
+  background: var(--cobalt-soft);
+  color: var(--cobalt);
+}
+
+.pop-hint {
+  font-size: 10.5px;
+  color: var(--danger);
+  padding-top: 6px;
+  border-top: 1px solid var(--rule);
 }
 
 .slot-lbl {

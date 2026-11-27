@@ -15,13 +15,15 @@ export const WATCH = [
   [0x0c, 0x50, 'DSP 参数'], [0x0c, 0x51, 'DSP 参数'], [0x0c, 0x53, 'DSP 参数']
 ];
 export class DemoDevice {
-  constructor({perButtonDebounce=false,independentDebounce=true,implementationRevision=50,variantId=2}={}) {
+  constructor({perButtonDebounce=false,independentDebounce=undefined,implementationRevision=53,variantId=2}={}) {
+    const resolvedIndep = independentDebounce === undefined ? variantId !== 6 : independentDebounce;
     this.vendorId = 0x373e; this.productId = 0x0033; this.productName = 'Luna33 · 模拟设备'; this.opened = true;
-    this.slots = Array.from({length: 4}, (_, i) => Uint8Array.from(i ? new Array(16).fill(0) : [7, 0, 0, 0, 1, 0, 0, 0, 15, 0, 0, 0, 100, 0, 0, 0]));
-    this.perButtonDebounce=perButtonDebounce||independentDebounce;this.independentDebounce=independentDebounce;
+    const defaultSlot0 = variantId === 6 ? new Array(16).fill(0) : [7, 0, 0, 0, 1, 0, 0, 0, 15, 0, 0, 0, 100, 0, 0, 0];
+    this.slots = Array.from({length: 4}, (_, i) => Uint8Array.from(i ? new Array(16).fill(0) : defaultSlot0));
+    this.perButtonDebounce=perButtonDebounce||resolvedIndep;this.independentDebounce=resolvedIndep;
     this.implementationRevision=implementationRevision;this.saveState=2;this.saveError=0;this.clockPaused=0;this.invalidAges=0;this.statusQueue=[];
     this.variantId=variantId;
-    this.buttonCount=independentDebounce?5:6;
+    this.buttonCount=resolvedIndep?5:6;
     this.buttons=this.slots.map(raw=>Array.from({length:this.buttonCount},()=>raw.slice(6,14)));
     this.legacy = Array.from({length: 4}, () => ({polling: 64, scan_rate: 64, hyper: 1, tracking: 0, lod: 138, motion_sync: 0, angle_snap: 0, ripple: 0, scan_sequence: 0}));
     this.dpiStages = Array.from({length: 4}, () => [[400, 400], [800, 800], [1600, 1600], [3200, 3200]]);
@@ -31,21 +33,31 @@ export class DemoDevice {
     this.angleTune = [0, 0, 0, 0];
     this.battery = {charging: 0, percent: 88};
     this.receiverAfh = {
-      flags: 5,
+      flags: 0x11,
       chTable: [76, 24, 64, 12, 42],
       searchCh: [33, 71],
       activeCh: 76,
       chIdx: 0,
-      lastPasses: 16,
-      scanCount: 2,
+      lastPasses: 128,
+      scanCount: 1,
       hopCount: 0,
+      hopPending: 0,
+      skipNextScan: 0,
+      crcErrCount: 1,
+      rxOkCount: 16420,
+      emaQ4: 752,
+      lastRssi: 47,
+      bestRssi: 44,
+      worstRssi: 52,
+      slotRssi: [47, 49, 0, 0, 0],
+      linkActive: true,
       scores: [
         85, 87, 86, 87, 88, 89, 90, 91, 90, 89, 91, 89, 89, 88, 89, 85,
         81, 82, 80, 82, 79, 74, 61, 65, 81, 87, 89, 89, 88, 88, 89, 89,
         89, 89, 90, 90, 93, 91
       ]
     };
-    const rawParameters = [26,32,33,36,40,44,45,46,47,48,49,50].includes(implementationRevision)
+    const rawParameters = [26,32,33,36,40,44,45,46,47,48,49,50,51,52,53].includes(implementationRevision)
       ? [0x67, 0x01, 0x08, 0xbf, 0x00, 0x00, 0x00]
       : [0x64, 0x90, 0x0a, 0xbf, 0x14, 0x15, 0x1e];
     const values = [2, 87, 2, 87, 69, 2, 2, 143, 112, 29, 138, 64, 144, 184, 207, 1, ...rawParameters];
@@ -68,7 +80,27 @@ export class DemoDevice {
       switch (op) {
         case 0: payload = [...prefix, 76, 70, 51, 51, 1, 34, 32,...(this.perButtonDebounce||this.implementationRevision?[this.variantId,this.variantId?VARIANTS.find(value=>value.id===this.variantId).mask:171,this.perButtonDebounce?(this.independentDebounce?2:1):0,this.perButtonDebounce?this.buttonCount:0]:[]),...(this.implementationRevision?[this.implementationRevision,this.implementationRevision===4?31:this.implementationRevision===3?15:7]:[])]; break;
         case 1: payload = [...prefix, args[0], ...this.slots[args[0] - 1]]; break;
-        case 2: this.slots[args[0] - 1] = args.slice(1, 17);this.buttons[args[0]-1][0]=args.slice(7,15); payload = [...prefix, ...args]; break;
+        case 2: {
+          const slot = args[0], raw = args.slice(1, 17);
+          if (args.length !== 17 || slot < 1 || slot > 4 || raw.length !== 16) { status = 0xa2; break; }
+          const view = new DataView(raw.buffer, raw.byteOffset, 16);
+          const badTimings = Array.from({length: 4}, (_, i) => view.getUint16(6 + i * 2, true)).some(n => n > 1000);
+          const badMask = this.independentDebounce && raw[5] !== 0 && (!(raw[5] & 0x80) || (raw[5] & 0x60));
+          const maxFps = this.variantId === 6 ? 0 : 34;
+          if (raw[0] > maxFps || raw[4] > 1 || badTimings || badMask) { status = 0xa2; break; }
+          if (this.implementationRevision >= 52) {
+            const flags = raw[14], hold = raw[15], air = raw[2];
+            const badLift = raw[1] !== 0 || raw[3] !== 0
+              || (!(flags & 0x02) && (flags & 0x7c))
+              || (!(flags & 0x80) ? (hold !== 0 || air !== 0) : (hold > 100 || (air > 100 && air !== 255)));
+            if (badLift) { status = 0xa2; break; }
+          } else {
+            const badLegacyReserved = raw[1] !== 0 || raw[2] !== 0 || raw[3] !== 0
+              || (this.variantId !== 6 && (raw[14] > 1 || raw[15] !== 0));
+            if (badLegacyReserved) { status = 0xa2; break; }
+          }
+          this.slots[slot - 1] = raw; this.buttons[slot - 1][0] = args.slice(7, 15); payload = [...prefix, ...args]; break;
+        }
         case 3: {
           const bytes = new Uint8Array(this.counts.buffer, args[0] * 16, 16);
           payload = [...prefix, args[0], ...bytes]; break;
@@ -97,20 +129,81 @@ export class DemoDevice {
           const age=new Uint8Array(4);new DataView(age.buffer).setUint32(0,this.invalidAges,true);
           payload=[...prefix,this.saveState,0,this.clockPaused,this.saveError,...age];break;
         }
+        case 12: {
+          if(this.implementationRevision<51){status=0xa3;break;}
+          if(args.length!==1||args[0]<5||args[0]>50){status=0xa2;break;}
+          this.lastQuietWindowMs=args[0]*10;
+          payload=[...prefix,args[0]];break;
+        }
         default: status = 0xa3;
       }
     } else if (group === 0 && command === 0x81) payload = [0, 0, 26, 0];
     else if (group === 0 && command === 0x83) payload = [this.battery.charging, this.battery.percent];
     else if (packet[2] === 1 && group === 0 && command === 0x85) {
-      if (!this.receiverAfh) { status = 0xa3; payload = []; }
-      else {
-        const a = this.receiverAfh;
-        payload = [
-          0x41, 0x46, 1, a.flags, ...a.chTable, ...a.searchCh, a.activeCh, a.chIdx, a.lastPasses,
+      const a = this.receiverAfh;
+      const sub = data.length ? data[0] : 0;
+      const isV4 = Boolean(a && (a.flags & 0x10));
+      const buildAf = () => {
+        const wireFlags = isV4 ? ((a.flags | 0x10 | (a.linkActive ? 0x20 : 0)) & 255) : (a.flags & 255);
+        const repCh = (isV4 && !a.linkActive) ? a.searchCh[0] : a.activeCh;
+        const repIdx = (isV4 && !a.linkActive) ? 0xff : a.chIdx;
+        return [
+          0x41, 0x46, 1, wireFlags, ...a.chTable, ...a.searchCh, repCh, repIdx, a.lastPasses,
           a.scanCount & 255, (a.scanCount >> 8) & 255, a.hopCount & 255, (a.hopCount >> 8) & 255,
           ...a.scores
         ];
-      }
+      };
+      const buildLq = () => {
+        const wireFlags = (a.flags | 0x10 | (a.linkActive ? 0x20 : 0)) & 255;
+        const repCh = a.linkActive ? a.activeCh : a.searchCh[0];
+        const repIdx = a.linkActive ? a.chIdx : 0xff;
+        const rx = a.rxOkCount >>> 0;
+        const ema = a.emaQ4 & 0xffff;
+        const crc = a.crcErrCount & 0xffff;
+        return [
+          0x4c, 0x51, 1, wireFlags, repCh, repIdx,
+          a.flags & 255, a.lastPasses & 255,
+          a.scanCount & 255, (a.scanCount >> 8) & 255,
+          a.hopCount & 255, (a.hopCount >> 8) & 255,
+          a.hopPending & 255, a.skipNextScan & 255,
+          crc & 255, (crc >> 8) & 255,
+          rx & 255, (rx >> 8) & 255, (rx >> 16) & 255, (rx >>> 24) & 255,
+          ema & 255, (ema >> 8) & 255,
+          a.lastRssi & 255, a.bestRssi & 255, a.worstRssi & 255,
+          ...(a.slotRssi || [0, 0, 0, 0, 0]).slice(0, 5)
+        ];
+      };
+      if (!a) { status = 0xa3; payload = []; }
+      else if (sub === 0) { payload = buildAf(); }
+      else if (sub === 1) {
+        if (!isV4) { status = 0xa3; payload = []; }
+        else { payload = buildLq(); }
+      } else if (sub === 2) {
+        if (!isV4) { status = 0xa3; payload = []; }
+        else {
+          a.flags = 0x19;
+          a.lastPasses = 128;
+          a.scanCount = (a.scanCount + 1) & 0xffff;
+          a.chIdx = 0;
+          a.activeCh = a.chTable[0];
+          a.slotRssi = [0, 0, 0, 0, 0];
+          payload = buildAf();
+        }
+      } else if (sub === 3) {
+        if (!isV4) { status = 0xa3; payload = []; }
+        else {
+          a.hopCount = 0;
+          a.hopPending = 0;
+          a.crcErrCount = 0;
+          a.rxOkCount = 0;
+          a.emaQ4 = 0;
+          a.lastRssi = 0;
+          a.bestRssi = 0;
+          a.worstRssi = 0;
+          a.slotRssi = [0, 0, 0, 0, 0];
+          payload = buildLq();
+        }
+      } else { status = 0xa3; payload = []; }
     }
     else if (group === 0 && command === 0x85) payload = [1];
     else if (group === 0 && command === 0x87) {

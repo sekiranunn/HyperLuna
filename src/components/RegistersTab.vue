@@ -15,7 +15,7 @@ function triggerImport() {
   <section class="swiss-reg">
     <div class="reg-head">
       <div class="reg-title-col">
-        <span class="idx-label"><em>03</em>PAW3950</span>
+        <span class="idx-label"><em>05</em>PAW3950</span>
         <div class="reg-title-row">
           <h2 class="reg-heading">{{ store.t('PAW3950 寄存器') }}</h2>
           <span class="reg-count tabular">{{ store.t('{count} 项寄存器', {count: store.state.registerRows.length}) }}</span>

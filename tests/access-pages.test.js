@@ -170,7 +170,7 @@ test('Pages artifact keeps standalone Vue 3 SPA and verified firmware while excl
   assert.ok(!existsSync(new URL('js/chunk-vendors.3562a7a5.js', dist)));
 
   const catalogue = JSON.parse(readFileSync(new URL('firmware/catalogue.json', dist)));
-  const ids = ['ABLODDB', 'ABLOD', 'stock'];
+  const ids = ['LUNA33_HYPERLUNA', 'stock'];
   const rxIds = ['LUNA33_820_ABS_STREAM'];
   const allBins = [...ids, ...rxIds];
   assert.deepEqual(catalogue.images.map(image => image.id), ids);
@@ -179,20 +179,21 @@ test('Pages artifact keeps standalone Vue 3 SPA and verified firmware while excl
   assert.deepEqual(readdirSync(new URL('firmware/', root)).sort(), allBins.map(id => id + '.bin').sort());
 
   const hashes = {
-    ABLODDB: 'ab2a94e759ce108d2aea022d1e06fbc22201c52f164a4a81161ce3d24a0e3ed6',
-    ABLOD: '4ad4f75cf0fc44346550414545b31172c13a4b2faa08fec9536f650c402cee18',
+    LUNA33_HYPERLUNA: '03b4f1941a5a2294941e01552fa0975fa4d9c62624ada7e05f0767a9fa233573',
     stock: '416f47366144d1773f37cc6b993f8f43332dba2746bc9cce13e732c038b93057',
-    LUNA33_820_ABS_STREAM: '3e7ec6d43fc0b7f78443c83e63c1975d28b9c3cee95a1f86aeb2e26a64e0df42'
+    LUNA33_820_ABS_STREAM: '3347c6a186d08eef016d6f3786baf441cfb9ada606f1572385de2f8d0123e8ab'
   };
   const db = catalogue.images[0];
   assert.equal(db.debounce_schema, 2); assert.equal(db.button_count, 5);
   assert.equal(db.features.per_button_debounce, true); assert.equal(db.features.independent_debounce, true);
+  assert.equal(db.features.quiet_window, true); assert.equal(db.features.custom_landing_guard, true);
+  assert.equal(db.features.wake_motion_preserve, true);
   assert.equal(db.config_storage_version, 4);
   for (const image of catalogue.images) {
     assert.equal(image.file, image.id + '.bin'); assert.equal(image.sha256, hashes[image.id]);
     if (image.id !== 'stock') {
-      assert.equal(image.name, image.id); assert.equal(image.implementation_revision, 50);
-      assert.equal(image.hardware_tested, image.id === 'ABLODDB');
+      assert.equal(image.name, image.id); assert.equal(image.implementation_revision, 53);
+      assert.equal(image.hardware_tested, true);
       assert.equal(image.paired_receiver, 'LUNA33_820_ABS_STREAM.bin');
       assert.equal(image.features.phase, 'none'); assert.equal(image.capabilities & (2 | 4 | 128), 0);
     }

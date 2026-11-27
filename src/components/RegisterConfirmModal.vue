@@ -14,27 +14,29 @@ defineProps({
   >
     <div class="modal-card">
       <div class="modal-head">
-        <span class="idx-label"><em>CONFIRM</em>PAW3950 WRITE</span>
+        <span class="idx-label"><em>CONFIRM</em>{{ store.state.reviewKicker || 'PAW3950 WRITE' }}</span>
         <h3 class="modal-title">{{ store.t(store.state.reviewTitle) }}</h3>
         <p class="modal-desc">{{ store.t(store.state.reviewDescription) }}</p>
       </div>
 
-      <table class="modal-table">
-        <thead>
-          <tr>
-            <th>{{ store.t('项目') }}</th>
-            <th>{{ store.t('当前值') }}</th>
-            <th>{{ store.t('写入值') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(row, i) in store.state.reviewRows" :key="i">
-            <td class="mono">{{ store.t(row.name) }}</td>
-            <td class="mono muted">{{ store.t(row.before) }}</td>
-            <td class="mono accent">{{ store.t(row.after) }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="modal-table-wrap">
+        <table class="modal-table">
+          <thead>
+            <tr>
+              <th>{{ store.t('项目') }}</th>
+              <th>{{ store.t('当前值') }}</th>
+              <th>{{ store.t('写入值') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, i) in store.state.reviewRows" :key="i">
+              <td class="mono">{{ store.t(row.name) }}</td>
+              <td class="mono muted">{{ store.t(row.before) }}</td>
+              <td class="mono accent">{{ store.t(row.after) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="modal-actions">
         <button class="sbtn-rule" type="button" :disabled="store.state.busy" @click="store.cancelReview">
@@ -62,11 +64,19 @@ defineProps({
 
 .modal-card {
   width: 100%;
-  max-width: 460px;
+  max-width: 520px;
   padding: 24px 28px;
   background: var(--paper-elev);
   border: 1px solid var(--rule-strong);
   border-top: 3px solid var(--cobalt);
+}
+
+.modal-table-wrap {
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: 22px;
+  border-top: 1.5px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule);
 }
 
 .modal-head {
@@ -90,9 +100,6 @@ defineProps({
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
-  margin-bottom: 22px;
-  border-top: 1.5px solid var(--rule-strong);
-  border-bottom: 1px solid var(--rule);
 }
 
 .modal-table th {
